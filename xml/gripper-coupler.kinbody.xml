@@ -1,0 +1,32 @@
+<Kinbody name="RobotiqGripperWithCoupler">
+
+  <!-- Robotiq Gripper with correct rotation -->
+
+  <!-- Coupler -->
+  <!-- Coupler adds 0.008 m. offset to the gripper -->
+  <body name="Coupler" type="dynamic">
+    <Geom type="trimesh" modifiable="false">
+      <data>grippermodels/coupler.vrml 0.001</data>
+      <render>grippermodels/coupler.vrml 0.001</render>
+      <translation>0 0 0.004</translation>
+      <rotationmat>-1 0 0 0 -1 0 0 0 1</rotationmat>
+    </Geom>
+    <mass type="custom">
+      <total>0.001</total>
+    </mass>
+  </body>
+
+  <Kinbody file="robotiqgripper.kinbody.xml">
+    <translation>0 0 0.008</translation>
+  </Kinbody>
+
+  <joint name="Jdummybase-coupler" type="hinge" enable="false">
+    <body>Coupler</body>
+    <body>Base</body>
+    <limitsdeg>0 0</limitsdeg>
+  </joint>
+
+  <!-- Adjacent Links -->
+  <adjacent>Base Coupler</adjacent>
+
+</Kinbody>

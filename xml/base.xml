@@ -1,0 +1,75 @@
+<Kinbody name="densobase">
+
+  <body name="topplate">
+    <Geom type="box">
+      <Extents>0.25 0.25 0.01</Extents>
+      <diffusecolor>0.8 0.8 0.8</diffusecolor>
+      <translation>0 0 -0.01</translation>
+    </Geom>      
+  </body>
+  
+  <body name="leg1">
+    <offsetfrom>topplate</offsetfrom>
+    <Translation>0.22 0.22 -0.305</Translation>      
+    <Geom type="box">
+      <Extents>0.02 0.02 0.285</Extents>
+      <diffusecolor>0.8 0.8 0.8</diffusecolor>
+    </Geom>      
+  </body>
+
+  <body name="leg2">
+    <offsetfrom>topplate</offsetfrom>
+    <Translation>-0.22 0.22 -0.305</Translation>      
+    <Geom type="box">
+      <Extents>0.02 0.02 0.285</Extents>
+      <diffusecolor>0.8 0.8 0.8</diffusecolor>
+    </Geom>      
+  </body>
+
+  <body name="leg3">
+    <offsetfrom>topplate</offsetfrom>
+    <Translation>-0.22 -0.22 -0.305</Translation>      
+    <Geom type="box">
+      <Extents>0.02 0.02 0.285</Extents>
+      <diffusecolor>0.8 0.8 0.8</diffusecolor>
+    </Geom>      
+  </body>
+
+  <body name="leg4">
+    <offsetfrom>topplate</offsetfrom>
+    <Translation>0.22 -0.22 -0.305</Translation>      
+    <Geom type="box">
+      <Extents>0.02 0.02 0.285</Extents>
+      <diffusecolor>0.8 0.8 0.8</diffusecolor>
+    </Geom>      
+  </body>
+
+  <!-- adjacent links -->
+  <adjacent>topplate leg1</adjacent>
+  <adjacent>topplate leg2</adjacent>
+  <adjacent>topplate leg3</adjacent>
+  <adjacent>topplate leg4</adjacent>
+  
+  <!-- static joints -->
+  <joint name="dummy1" type="hinge" enable="false">
+    <body>topplate</body>
+    <body>leg1</body>
+    <limits>0 0</limits>
+  </joint>
+  <joint name="dummy2" type="hinge" enable="false">
+    <body>topplate</body>
+    <body>leg2</body>
+    <limits>0 0</limits>
+  </joint>
+  <joint name="dummy3" type="hinge" enable="false">
+    <body>topplate</body>
+    <body>leg3</body>
+    <limits>0 0</limits>
+  </joint>
+  <joint name="dummy4" type="hinge" enable="false">
+    <body>topplate</body>
+    <body>leg4</body>
+    <limits>0 0</limits>
+  </joint>
+  
+</Kinbody>

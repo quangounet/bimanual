@@ -1,0 +1,36 @@
+<!-- This is a box with 3 colored faces -->
+<!-- Each color corresponds to the positive axis of the object -->
+
+<Kinbody name="woodstick">
+  <body type="dynamic">
+      
+    <geom type="box">
+      <extents>0.14 0.0245 0.0125</extents>
+      <translation>0 0 0.0</translation>
+      <diffusecolor>0.263 0.184 0.129</diffusecolor>
+      <ambientcolor>0.6 0.6 0.6</ambientcolor>
+    </geom>
+    
+    <geom type="box">
+      <extents>0.14 0.0245 0</extents>
+      <translation>0 0 0.012501</translation>
+      <diffusecolor>0 0 1</diffusecolor>
+    </geom>
+
+    <geom type="box">
+      <extents>0.14 0 0.0125</extents>
+      <translation>0 0.024501 0</translation>
+      <diffusecolor>0 1 0</diffusecolor>
+    </geom>
+
+    <geom type="box">
+      <extents>0 0.0245 0.0125</extents>
+      <translation>0.140001 0 0</translation>
+      <diffusecolor>1 0 0</diffusecolor>
+    </geom>
+
+    <mass type="mimicgeom">
+      <total>0.1</total>
+    </mass>
+  </body>
+</Kinbody>

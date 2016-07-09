@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Robot name="denso_gripper_base">
+
+  <!-- Include components (bottom-up) -->
+  <!-- Base -->
+  <Kinbody file="base.xml"></Kinbody>
+  
+  <!-- Denso -->
+  <Robot file="denso-vs060.zae"></Robot>
+  
+  <!-- Lower Interface Plate -->
+  <Kinbody>
+    <body name="gamma_lowerplate" type="dynamic">
+      <Geom type="trimesh" modifiable="false">
+	<data>sensormodels/denso_gamma.dae 1.0</data>
+	<render>sensormodels/denso_gamma.dae 1.0</render>
+	<!-- Set the local frame -->
+	<!-- R(x, pi/2) -->
+	<rotationmat>1 0 0 0 0 -1 0 1 0</rotationmat>
+	<!-- R(z, pi) -->
+	<rotationmat>-1 0 0 0 -1 0 0 0 1</rotationmat>
+      </Geom>
+      <offsetfrom>link6</offsetfrom>
+      <!-- Set alignment with link6 -->
+      <!-- R(z, pi/2) -->
+      <rotationmat>0 -1 0 1 0 0 0 0 1</rotationmat>
+      <!-- <translation>0 0 -0.2</translation> -->
+    </body>
+    <joint name="joint_denso_gamma" type="hinge" enable="false">
+      <body>link6</body>
+      <body>gamma_lowerplate</body>
+      <limits>0 0</limits>
+    </joint>
+  </Kinbody>
+
+  <!-- ATI sensor -->
+  <Kinbody>
+    <body name="ati_ft_sensor" type="dynamic">
+      <Geom type="trimesh" modifiable="false">
+	<data>sensormodels/ati_gamma.dae 1.0</data>
+	<render>sensormodels/ati_gamma.dae 1.0</render>
+	<!-- Set the local frame -->
+	<!-- Move the local frame to top -->
+	<translation>0 0 -0.0146</translation>
+	<!-- R(x, -pi/2) -->
+	<rotationmat>1 0 0 0 0 1 0 -1 0</rotationmat>
+	<!-- R(z, -pi/6) -->
+	<rotationmat>0.866 0.5 0 -0.5 0.866 0 0 0 1</rotationmat>
+	<!-- R(z, pi) -->
+	<rotationmat>-1 0 0 0 -1 0 0 0 1</rotationmat>
+      </Geom>
+      <offsetfrom>gamma_lowerplate</offsetfrom>
+      <translation>0 0 0.0386</translation>
+    </body>
+    <joint name="joint_gamma_ati" type="hinge" enable="false">
+      <body>gamma_lowerplate</body>
+      <body>ati_ft_sensor</body>
+      <limits>0 0</limits>
+    </joint>
+  </Kinbody>
+
+  <!-- Upper Interface Plate -->
+  <Kinbody>
+    <body name="gamma_upperplate" type="dynamic">
+      <Geom type="trimesh" modifiable="false">
+	<data>sensormodels/gamma_robotiq.dae 1.0</data>
+	<render>sensormodels/gamma_robotiq.dae 1.0</render>
+	<!-- Set the local frame -->
+	<!-- Move the local frame to top -->
+	<translation>0 0 -0.015</translation>
+	<!-- R(x, pi/2) -->
+	<rotationmat>1 0 0 0 0 -1 0 1 0</rotationmat>
+	<!-- R(z, pi) -->
+	<rotationmat>-1 0 0 0 -1 0 0 0 1</rotationmat>
+      </Geom>
+      <offsetfrom>ati_ft_sensor</offsetfrom>
+      <translation>0 0 0.015</translation>
+    </body>
+    <joint name="joint_ati_gamma" type="hinge" enable="false">
+      <body>ati_ft_sensor</body>
+      <body>gamma_upperplate</body>
+      <limits>0 0</limits>
+    </joint>
+  </Kinbody>
+
+  <!-- Gripper + Coupler -->
+  <Kinbody file="gripper-coupler.kinbody.xml">
+  </Kinbody>
+  <!-- Attach the gripper to the robot -->
+  <Kinbody>
+    <body name="Coupler">
+      <offsetfrom>gamma_upperplate</offsetfrom>
+    </body>
+    <joint name="joint_gamma_robotiq" type="hinge" enable="false">
+      <body>gamma_upperplate</body>
+      <body>Coupler</body>
+      <limits>0 0</limits>
+    </joint>
+  </Kinbody>
+
+  <!-- attach the robot with the base -->
+  <Kinbody>
+    <body name="topplate"></body>
+    <adjacent>link0 topplate</adjacent>
+    <joint name="dummy1" type="hinge" enable="false">
+      <body>link0</body>
+      <body>topplate</body>
+      <limits>0 0</limits>
+    </joint>
+  </Kinbody>
+  
+  <Manipulator name="gripper">
+    <base>link0</base>
+    <effector>ToolTip</effector>
+    <translation>0 0 0.05</translation>
+    <joints>JL1</joints>
+    <closingdirection>1 1 1 0</closingdirection>
+    <direction>0 0 1</direction>
+  </Manipulator>    
+</Robot>

@@ -12,8 +12,14 @@ from pymanip.utils import ObjectPreprocessing as op
 from pymanip.utils import Utils
 from pymanip.utils.Utils import Colorize
 
-from toppso3 import Utils as SE3Utils
-from toppso3 import lie as Lie
+# SE3 planning for objects
+import os
+import sys
+sys.path.append(os.path.dirname(os.path.realpath(__file__)) + '/rrtse3/')
+import SE3RRT
+import SE3Utils
+import lie as Lie
+
 import TOPP
 
 from CCTrajectory import CCTrajectory

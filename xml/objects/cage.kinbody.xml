@@ -1,0 +1,145 @@
+<kinbody name="cage">
+  <body name="part01" type="dynamic">
+    <geom type="box">
+      <extents>0.02 0.02 0.25</extents>
+      <diffusecolor>0.0 0.0 1.0</diffusecolor>
+      <ambientcolor>0.6 0.6 0.6</ambientcolor>
+    </geom>
+    <translation>0 0 0</translation>
+    <mass type="mimicgeom">
+      <density>500</density>
+    </mass>
+  </body>
+
+  <body name="part02" type="dynamic">
+    <geom type="box">
+      <extents>0.02 0.02 0.25</extents>
+      <diffusecolor>0.847 0.686 0.439</diffusecolor>
+      <ambientcolor>0.6 0.6 0.6</ambientcolor>
+    </geom>
+    <translation>0.26 0 0</translation>
+    <mass type="mimicgeom">
+      <density>500</density>
+    </mass>
+  </body>
+
+  <body name="part03" type="dynamic">
+    <geom type="box">
+      <extents>0.02 0.02 0.25</extents>
+      <diffusecolor>0.847 0.686 0.439</diffusecolor>
+      <ambientcolor>0.6 0.6 0.6</ambientcolor>
+    </geom>
+    <translation>0.26 0.36 0</translation>
+    <mass type="mimicgeom">
+      <density>500</density>
+    </mass>
+  </body>
+
+  <body name="part04" type="dynamic">
+    <geom type="box">
+      <extents>0.02 0.02 0.25</extents>
+      <diffusecolor>0.847 0.686 0.439</diffusecolor>
+      <ambientcolor>0.6 0.6 0.6</ambientcolor>
+    </geom>
+    <translation>0 0.36 0</translation>
+    <mass type="mimicgeom">
+      <density>500</density>
+    </mass>
+  </body>
+
+  <body name="part05" type="dynamic">
+    <geom type="box">
+      <extents>0.11 0.02 0.02</extents>
+      <diffusecolor>1.0 0.0 0.0</diffusecolor>
+      <ambientcolor>0.6 0.6 0.6</ambientcolor>
+    </geom>
+    <translation>0.13 0 -0.23</translation>
+    <mass type="mimicgeom">
+      <density>500</density>
+    </mass>
+  </body>
+
+  <body name="part06" type="dynamic">
+    <geom type="box">
+      <extents>0.02 0.16 0.02</extents>
+      <diffusecolor>0.847 0.686 0.439</diffusecolor>
+      <ambientcolor>0.6 0.6 0.6</ambientcolor>
+    </geom>
+    <translation>0.26 0.18 -0.23</translation>
+    <mass type="mimicgeom">
+      <density>500</density>
+    </mass>
+  </body>
+
+  <body name="part07" type="dynamic">
+    <geom type="box">
+      <extents>0.11 0.02 0.02</extents>
+      <diffusecolor>0.847 0.686 0.439</diffusecolor>
+      <ambientcolor>0.6 0.6 0.6</ambientcolor>
+    </geom>
+    <translation>0.13 0.36 -0.23</translation>
+    <mass type="mimicgeom">
+      <density>500</density>
+    </mass>
+  </body>
+
+  <body name="part08" type="dynamic">
+    <geom type="box">
+      <extents>0.02 0.16 0.02</extents>
+      <diffusecolor>0.0 1.0 0.0</diffusecolor>
+      <ambientcolor>0.6 0.6 0.6</ambientcolor>
+    </geom>
+    <translation>0 0.18 -0.23</translation>
+    <mass type="mimicgeom">
+      <density>500</density>
+    </mass>
+  </body>
+
+  <body name="part09" type="dynamic">
+    <geom type="box">
+      <extents>0.11 0.02 0.02</extents>
+      <diffusecolor>0.847 0.686 0.439</diffusecolor>
+      <ambientcolor>0.6 0.6 0.6</ambientcolor>
+    </geom>
+    <translation>0.13 0 0.23</translation>
+    <mass type="mimicgeom">
+      <density>500</density>
+    </mass>
+  </body>
+
+  <body name="part10" type="dynamic">
+    <geom type="box">
+      <extents>0.02 0.16 0.02</extents>
+      <diffusecolor>0.847 0.686 0.439</diffusecolor>
+      <ambientcolor>0.6 0.6 0.6</ambientcolor>
+    </geom>
+    <translation>0.26 0.18 0.23</translation>
+    <mass type="mimicgeom">
+      <density>500</density>
+    </mass>
+  </body>
+
+  <body name="part11" type="dynamic">
+    <geom type="box">
+      <extents>0.11 0.02 0.02</extents>
+      <diffusecolor>0.847 0.686 0.439</diffusecolor>
+      <ambientcolor>0.6 0.6 0.6</ambientcolor>
+    </geom>
+    <translation>0.13 0.36 0.23</translation>
+    <mass type="mimicgeom">
+      <density>500</density>
+    </mass>
+  </body>
+
+  <body name="part12" type="dynamic">
+    <geom type="box">
+      <extents>0.02 0.16 0.02</extents>
+      <diffusecolor>0.847 0.686 0.439</diffusecolor>
+      <ambientcolor>0.6 0.6 0.6</ambientcolor>
+    </geom>
+    <translation>0 0.18 0.23</translation>
+    <mass type="mimicgeom">
+      <density>500</density>
+    </mass>
+  </body>
+</kinbody>

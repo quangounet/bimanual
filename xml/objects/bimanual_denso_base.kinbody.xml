@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Kinbody name="denso_base">
+
+  <body name="left_base">
+    <translation>0 -0.529 0</translation>
+    <Geom type="box">
+      <Extents>0.25 0.25 0.01</Extents>
+      <diffusecolor>0.8 0.8 0.8</diffusecolor>
+      <translation>0 0 -0.01</translation>
+    </Geom>
+    <Geom type="box">
+      <Translation>0.22 0.22 -0.305</Translation>
+      <Extents>0.02 0.02 0.285</Extents>
+      <diffusecolor>0.8 0.8 0.8</diffusecolor>
+    </Geom>
+    <Geom type="box">
+      <Translation>-0.22 0.22 -0.305</Translation>
+      <Extents>0.02 0.02 0.285</Extents>
+      <diffusecolor>0.8 0.8 0.8</diffusecolor>
+    </Geom>
+    <Geom type="box">
+      <Translation>-0.22 -0.22 -0.305</Translation>
+      <Extents>0.02 0.02 0.285</Extents>
+      <diffusecolor>0.8 0.8 0.8</diffusecolor>
+    </Geom>
+    <Geom type="box">
+      <Translation>0.22 -0.22 -0.305</Translation>
+      <Extents>0.02 0.02 0.285</Extents>
+      <diffusecolor>0.8 0.8 0.8</diffusecolor>
+    </Geom>
+  </body>
+
+  <body name="right_base">
+    <translation>0 0.529 0</translation>
+    <Geom type="box">
+      <Extents>0.25 0.25 0.01</Extents>
+      <diffusecolor>0.8 0.8 0.8</diffusecolor>
+      <translation>0 0 -0.01</translation>
+    </Geom>
+    <Geom type="box">
+      <Translation>0.22 0.22 -0.305</Translation>
+      <Extents>0.02 0.02 0.285</Extents>
+      <diffusecolor>0.8 0.8 0.8</diffusecolor>
+    </Geom>
+    <Geom type="box">
+      <Translation>-0.22 0.22 -0.305</Translation>
+      <Extents>0.02 0.02 0.285</Extents>
+      <diffusecolor>0.8 0.8 0.8</diffusecolor>
+    </Geom>
+    <Geom type="box">
+      <Translation>-0.22 -0.22 -0.305</Translation>
+      <Extents>0.02 0.02 0.285</Extents>
+      <diffusecolor>0.8 0.8 0.8</diffusecolor>
+    </Geom>
+    <Geom type="box">
+      <Translation>0.22 -0.22 -0.305</Translation>
+      <Extents>0.02 0.02 0.285</Extents>
+      <diffusecolor>0.8 0.8 0.8</diffusecolor>
+    </Geom>
+  </body>
+
+
+  <body name="base_link">
+    <Geom type="box">
+      <Extents>0.02 0.289 0.02</Extents>
+      <diffusecolor>0.8 0.8 0.8</diffusecolor>
+      <translation>0.22 0 -0.295</translation>
+    </Geom>
+    <Geom type="box">
+      <Extents>0.02 0.289 0.02</Extents>
+      <diffusecolor>0.8 0.8 0.8</diffusecolor>
+      <translation>-0.22 0 -0.295</translation>
+    </Geom>
+  </body>
+  
+  <!-- adjacent links -->
+  <adjacent>left_base base_link</adjacent>
+  <adjacent>right_base base_link</adjacent>
+  
+  <!-- static joints -->
+  <joint name="joint_left_base" type="hinge" enable="false">
+    <body>left_base</body>
+    <body>base_link</body>
+    <limits>0 0</limits>
+  </joint>
+  <joint name="joint_right_base" type="hinge" enable="false">
+    <body>right_base</body>
+    <body>base_link</body>
+    <limits>0 0</limits>
+  </joint>
+</Kinbody>

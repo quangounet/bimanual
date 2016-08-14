@@ -1,9 +1,0 @@
-<Kinbody name="floor">
-  <Body type="static">
-    <Geom type="box">
-      <Extents>2 2 0.05</Extents>
-      <!-- This is to avoid collision between the robot(s) and this floor -->
-      <Translation>0 0 -0.050001</Translation>
-    </Geom>
-  </Body>
-</Kinbody>

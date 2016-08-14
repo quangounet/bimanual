@@ -1,0 +1,304 @@
+<Kinbody name="robotiq_85_gripper">
+
+  <!-- robotiq_coupler -->
+  <body name="robotiq_coupler" type="dynamic">
+    <Geom type="trimesh" modifiable="false">
+      <diffuseColor>0.2 0.2 0.2</diffuseColor>
+      <data>meshes/robotiq_85_gripper/coupler.vrml 0.001</data>
+      <render>meshes/robotiq_85_gripper/coupler.vrml 0.001</render>
+      <translation>0 0 0.004</translation>
+      <rotationmat>-1 0 0 0 -1 0 0 0 1</rotationmat>
+    </Geom>
+    <mass type="custom">
+      <total>0.001</total>
+    </mass>
+  </body>
+
+  <!-- Hand robotiq_base -->
+  <body name="robotiq_base" type="dynamic">
+    <offsetfrom>robotiq_coupler</offsetfrom>
+    <Geom type="trimesh" modifiable="false">
+      <diffuseColor>0.2 0.2 0.2</diffuseColor>
+      <data>meshes/robotiq_85_gripper/g0.vrml 0.001</data>
+      <render>meshes/robotiq_85_gripper/g0.vrml 0.001</render>
+      <translation>0 0 0.098</translation>
+    </Geom>
+    <mass type="custom">
+      <total>0.850</total>
+      <com>0 0 -0.05</com>
+    </mass>
+  </body>
+
+  <!-- Link1 Left -->
+  <body name="robotiq_link_l1" type="dynamic">
+    <offsetfrom>robotiq_base</offsetfrom>
+    <translation>0 -0.0127 0.06142</translation>
+    <Geom type="trimesh" modifiable="false">
+      <diffuseColor>0.2 0.2 0.2</diffuseColor>
+      <data>meshes/robotiq_85_gripper/g1.vrml 0.001</data>
+      <render>meshes/robotiq_85_gripper/g1.vrml 0.001</render>
+      <translation>0 0.0127 0.02858</translation>
+    </Geom>
+    <mass type="custom">
+      <total>0.0</total>
+    </mass>
+  </body>
+  
+  <!-- Link1 Right -->
+  <body name="robotiq_link_r1" type="dynamic">
+    <offsetfrom>robotiq_base</offsetfrom>
+    <translation>0 0.0127 0.06142</translation>
+    <Geom type="trimesh" modifiable="false">
+      <diffuseColor>0.2 0.2 0.2</diffuseColor>
+      <data>meshes/robotiq_85_gripper/g2.vrml 0.001</data>
+      <render>meshes/robotiq_85_gripper/g2.vrml 0.001</render>
+      <translation>0 -0.0127 0.02858</translation>
+    </Geom>
+    <mass type="custom">
+      <total>0.0</total>
+    </mass>
+  </body>
+  
+  <!-- Link4 Left -->
+  <body name="robotiq_link_l4" type="dynamic">
+    <offsetfrom>robotiq_base</offsetfrom>
+    <!-- <translation>-0.0498 0 0.0148</translation> -->
+    <translation>0 -0.0498 0.1048</translation>
+    <Geom type="trimesh" modifiable="false">
+      <diffuseColor>0.2 0.2 0.2</diffuseColor>
+      <data>meshes/robotiq_85_gripper/g3.vrml 0.001</data>
+      <render>meshes/robotiq_85_gripper/g3.vrml 0.001</render>
+      <translation>0 0.0498 -0.0148</translation>
+    </Geom>
+    <mass type="custom">
+      <total>0.0</total>
+    </mass>
+  </body>
+  
+  <!-- Link4 Right -->
+  <body name="robotiq_link_r4" type="dynamic">
+    <offsetfrom>robotiq_base</offsetfrom>
+    <!-- <translation>0.0498 0 0.0148</translation> -->
+    <translation>0 0.0498 0.1048</translation>
+    <Geom type="trimesh" modifiable="false">
+      <diffuseColor>0.2 0.2 0.2</diffuseColor>
+      <data>meshes/robotiq_85_gripper/g4.vrml 0.001</data>
+      <render>meshes/robotiq_85_gripper/g4.vrml 0.001</render>
+      <translation>0 -0.0498 -0.0148</translation>
+    </Geom>
+    <mass type="custom">
+      <total>0.0</total>
+    </mass>
+  </body>
+
+  <!-- Fingertip Left -->
+  <body name="robotiq_fingertip_l" type="dynamic">
+    <offsetfrom>robotiq_link_l4</offsetfrom>
+    <Geom type="trimesh" modifiable="false">
+      <diffuseColor>0.85  0.85  0.85</diffuseColor>
+      <data>meshes/robotiq_85_gripper/fingertip.stl 1.0</data>
+      <render>meshes/robotiq_85_gripper/fingertip.stl 1.0</render>
+      <translation>0 -0.003 0</translation>
+    </Geom>
+    <translation>0 0.00392 0.0258</translation>
+    <mass type="custom">
+      <total>0.0</total>
+    </mass>
+  </body>
+
+  <!-- Fingertip Right -->
+  <body name="robotiq_fingertip_r" type="dynamic">
+    <offsetfrom>robotiq_link_r4</offsetfrom>
+    <Geom type="trimesh" modifiable="false">
+      <diffuseColor>0.85  0.85  0.85</diffuseColor>
+      <data>meshes/robotiq_85_gripper/fingertip.stl 1.0</data>
+      <render>meshes/robotiq_85_gripper/fingertip.stl 1.0</render>
+      <translation>0 -0.003 0</translation>
+    </Geom>
+    <translation>0 -0.00392 0.0258</translation>
+    <mass type="custom">
+      <total>0.0</total>
+    </mass>
+  </body>
+  
+  <!-- Link2 Left -->
+  <body name="robotiq_link_l2" type="dynamic">
+    <offsetfrom>robotiq_base</offsetfrom>
+    <translation>0 -0.03058 0.055</translation>
+    <Geom type="trimesh" modifiable="false">
+      <diffuseColor>0.2 0.2 0.2</diffuseColor>
+      <data>meshes/robotiq_85_gripper/g8.vrml 0.001</data>
+      <render>meshes/robotiq_85_gripper/g8.vrml 0.001</render>
+      <translation>0 0.03058 0.035</translation>
+    </Geom>
+    <mass type="custom">
+      <total>0.0</total>
+    </mass>
+  </body>
+  
+  <!-- Link2 Right -->
+  <body name="robotiq_link_r2" type="dynamic">
+    <offsetfrom>robotiq_base</offsetfrom>
+    <translation>0 0.03058 0.055</translation>
+    <Geom type="trimesh" modifiable="false">
+      <diffuseColor>0.2 0.2 0.2</diffuseColor>
+      <data>meshes/robotiq_85_gripper/g7.vrml 0.001</data>
+      <render>meshes/robotiq_85_gripper/g7.vrml 0.001</render>
+      <translation>0 -0.03058 0.035</translation>
+    </Geom>
+    <mass type="custom">
+      <total>0.0</total>
+    </mass>
+  </body>
+
+  <!-- Link3 Left -->
+  <body name="robotiq_link_l3" type="dynamic">
+    <offsetfrom>robotiq_base</offsetfrom>
+    <translation>0 -0.0678 0.0984</translation>
+    <Geom type="trimesh" modifiable="false">
+      <diffuseColor>0.2 0.2 0.2</diffuseColor>
+      <data>meshes/robotiq_85_gripper/g5.vrml 0.001</data>
+      <render>meshes/robotiq_85_gripper/g5.vrml 0.001</render>
+      <translation>0 0.0678 -0.0084</translation>
+    </Geom>
+    <mass type="custom">
+      <total>0.0</total>
+    </mass>
+  </body>
+  
+  <!-- Link3 Right -->
+  <body name="robotiq_link_r3" type="dynamic">
+    <offsetfrom>robotiq_base</offsetfrom>
+    <translation>0 0.0678 0.0984</translation>
+    <Geom type="trimesh" modifiable="false">
+      <diffuseColor>0.2 0.2 0.2</diffuseColor>
+      <data>meshes/robotiq_85_gripper/g6.vrml 0.001</data>
+      <render>meshes/robotiq_85_gripper/g6.vrml 0.001</render>
+      <translation>0 -0.0678 -0.0084</translation>
+    </Geom>
+    <mass type="custom">
+      <total>0.0</total>
+    </mass>
+  </body>
+  
+  <!-- Tool Tip -->
+  <body name="robotiq_tool_tip" type="dynamic">
+    <offsetfrom>robotiq_base</offsetfrom>
+    <translation>0 0 0.09</translation>
+    <Geom type="trimesh" modifiable="false">
+      <diffuseColor>0.2 0.2 0.2</diffuseColor>
+      <data>meshes/robotiq_85_gripper/g9.vrml 0.001</data>
+      <render>meshes/robotiq_85_gripper/g9.vrml 0.001</render>
+    </Geom>
+    <mass type="custom">
+      <total>0.0</total>
+    </mass>
+  </body>
+  <joint name="Jdummy" type="hinge" enable="false">
+    <body>robotiq_base</body>
+    <body>robotiq_tool_tip</body>
+    <limitsdeg>0 0</limitsdeg>
+  </joint>
+
+  <!-- Joints -->
+  <joint name="robotiq_joint_base" type="hinge" enable="false">
+    <body>robotiq_coupler</body>
+    <body>robotiq_base</body>
+    <limitsdeg>0 0</limitsdeg>
+  </joint>
+  
+  <joint name="robotiq_joint_l1" type="hinge">
+    <body>robotiq_base</body>
+    <body>robotiq_link_l1</body>
+    <offsetfrom>robotiq_link_l1</offsetfrom>
+    <limitsdeg>0 46</limitsdeg>
+    <axis>-1 0 0</axis>
+  </joint>
+  <joint name="robotiq_joint_r1" type="hinge" enable="false" mimic_pos="robotiq_joint_l1" mimic_vel="|robotiq_joint_l1 1" mimic_accel="|robotiq_joint_l1 0">
+    <body>robotiq_base</body>
+    <body>robotiq_link_r1</body>
+    <offsetfrom>robotiq_link_r1</offsetfrom>
+    <axis>1 0 0</axis>
+  </joint>
+  
+  <joint name="robotiq_joint_l2" type="hinge" enable="false" mimic_vel="|robotiq_joint_l1 1"
+        mimic_pos="1.695 - acos((0.0000215 + 0.057080946032805023*cos(0.707731 - robotiq_joint_l1))/(sqrt(0.0032582493934762385 + 0.0021688079526703324*cos(1.933731 - robotiq_joint_l1) + 0.0021809403720633906*cos(1.204669 + robotiq_joint_l1)))) - acos((0.0019937 + 0.0021688*cos(1.933731 - robotiq_joint_l1) + 0.002181*cos(1.204669 + robotiq_joint_l1))/(0.06353*sqrt(0.0032582493934762385 + 0.0021688079526703324*cos(1.933731 - robotiq_joint_l1) + 0.0021809403720633906*cos(1.204669 + robotiq_joint_l1))))" >
+    <body>robotiq_base</body>
+    <body>robotiq_link_l2</body>
+    <offsetfrom>robotiq_link_l2</offsetfrom>
+    <axis>-1 0 0</axis>
+  </joint>  
+  <joint name="robotiq_joint_r2" type="hinge" enable="false" mimic_pos="robotiq_joint_l2" mimic_vel="|robotiq_joint_l2 1" mimic_accel="|robotiq_joint_l2 0">
+    <body>robotiq_base</body>
+    <body>robotiq_link_r2</body>
+    <offsetfrom>robotiq_link_r2</offsetfrom>
+    <axis>1 0 0</axis>
+  </joint>
+
+  <joint name="robotiq_joint_l3" type="hinge" enable="false">
+    <body>robotiq_link_l2</body>
+    <body>robotiq_link_l3</body>
+    <offsetfrom>robotiq_link_l2</offsetfrom>
+    <anchor>-0.03152 0 -0.00394</anchor>
+    <axis>-1 0 0</axis>
+  </joint>
+  <joint name="robotiq_joint_r3" type="hinge" enable="false" mimic_pos="robotiq_joint_l3" mimic_vel="|robotiq_joint_l3 1" mimic_accel="|robotiq_joint_l3 0">
+    <body>robotiq_link_r2</body>
+    <body>robotiq_link_r3</body>
+    <offsetfrom>robotiq_link_r2</offsetfrom>
+    <anchor>0.03152 0 -0.00394</anchor>
+    <axis>1 0 0</axis>
+  </joint>
+
+  <joint name="robotiq_joint_l4" type="hinge" enable="false">
+    <body>robotiq_link_l4</body>
+    <body>robotiq_link_l3</body>
+    <offsetfrom>robotiq_link_l3</offsetfrom>
+    <axis>-1 0 0</axis>
+  </joint>
+  <joint name="robotiq_joint_r4" type="hinge" enable="false" mimic_pos="robotiq_joint_l4" mimic_vel="|robotiq_joint_l4 1" mimic_accel="|robotiq_joint_l4 0">
+    <body>robotiq_link_r4</body>
+    <body>robotiq_link_r3</body>
+    <offsetfrom>robotiq_link_r3</offsetfrom>
+    <axis>1 0 0</axis>
+  </joint>
+
+  <joint name="robotiq_joint_fingertip_l" type="hinge" enable="false">
+    <body>robotiq_link_l4</body>
+    <body>robotiq_fingertip_l</body>
+    <limits>0 0</limits>
+  </joint>
+  <joint name="robotiq_joint_fingertip_r" type="hinge" enable="false">
+    <body>robotiq_link_r4</body>
+    <body>robotiq_fingertip_r</body>
+    <limits>0 0</limits>
+  </joint>
+
+  <joint name="robotiq_joint_l5" type="hinge" enable="false" mimic_pos="-robotiq_joint_l1" mimic_vel="|robotiq_joint_l1 1" mimic_accel="|robotiq_joint_l1 0">
+    <body>robotiq_link_l1</body>
+    <body>robotiq_link_l4</body>
+    <offsetfrom>robotiq_link_l4</offsetfrom>
+    <axis>-1 0 0</axis>
+  </joint>
+  <joint name="robotiq_joint_r5" type="hinge" enable="false" mimic_pos="robotiq_joint_l5" mimic_vel="|robotiq_joint_l5 1" mimic_accel="|robotiq_joint_l5 0">
+    <body>robotiq_link_r1</body>
+    <body>robotiq_link_r4</body>
+    <offsetfrom>robotiq_link_r4</offsetfrom>
+    <axis>1 0 0</axis>
+  </joint>
+
+  <!-- Adjacent Links -->
+  <adjacent>robotiq_base robotiq_coupler</adjacent>
+  <adjacent>robotiq_base robotiq_link_l1</adjacent>
+  <adjacent>robotiq_base robotiq_link_l2</adjacent>
+  <adjacent>robotiq_link_l1 robotiq_link_l4</adjacent>
+  <adjacent>robotiq_link_l2 robotiq_link_l3</adjacent>
+  <adjacent>robotiq_link_l3 robotiq_link_l4</adjacent>
+
+  <adjacent>robotiq_base robotiq_link_r1</adjacent>
+  <adjacent>robotiq_base robotiq_link_r2</adjacent>
+  <adjacent>robotiq_link_r1 robotiq_link_r4</adjacent>
+  <adjacent>robotiq_link_r2 robotiq_link_r3</adjacent>
+  <adjacent>robotiq_link_r3 robotiq_link_r4</adjacent>
+
+</Kinbody>

@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Robot name="denso_ft_sensor">
+  
+  <!-- Include components (bottom-up) -->
+  <!-- Denso -->
+  <Robot file="denso_vs060.dae"></Robot>
+  
+  <!-- Lower Interface Plate -->
+  <Kinbody>
+    <body name="gamma_lowerplate" type="dynamic">
+      <Geom type="trimesh" modifiable="false">
+        <diffuseColor>0.2 0.2 0.2</diffuseColor>
+        <data>meshes/ati_gamma/denso_gamma.stl 1.0</data>
+        <render>meshes/ati_gamma/denso_gamma.stl 1.0</render>
+      </Geom>
+      <offsetfrom>link6</offsetfrom>
+      <!-- Rotate frame with respect link6 -->
+      <rotationaxis>0 0 1 90</rotationaxis>
+    </body>
+    <joint name="joint_denso_gamma" type="hinge" enable="false">
+      <body>link6</body>
+      <body>gamma_lowerplate</body>
+      <limits>0 0</limits>
+    </joint>
+  </Kinbody>
+
+  <!-- ATI sensor -->
+  <Kinbody>
+    <body name="ati_ft_sensor" type="dynamic">
+      <Geom type="trimesh" modifiable="false">
+        <diffuseColor>0.85  0.85  0.85</diffuseColor>
+        <data>meshes/ati_gamma/ati_gamma.stl 1.0</data>
+        <render>meshes/ati_gamma/ati_gamma.stl 1.0</render>
+        <!-- Align the mesh -->
+        <translation>0 0 -0.0146</translation>
+        <rotationaxis>1 0 0 180</rotationaxis>
+        <rotationaxis>0 0 1 150</rotationaxis>
+      </Geom>
+      <offsetfrom>gamma_lowerplate</offsetfrom>
+      <translation>0 0 0.0386</translation>
+    </body>
+    <joint name="joint_gamma_ati" type="hinge" enable="false">
+      <body>gamma_lowerplate</body>
+      <body>ati_ft_sensor</body>
+      <limits>0 0</limits>
+    </joint>
+  </Kinbody>
+
+  <!-- Define the manipulator -->
+  <Manipulator name="denso_ft_sensor">
+    <base>link0</base>
+    <effector>ati_ft_sensor</effector>
+    <translation>0 0 0</translation>
+  </Manipulator>
+  
+</Robot>

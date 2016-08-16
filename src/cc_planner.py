@@ -6,11 +6,12 @@ Modified from ClosedChainPlanner.py developed by Puttichai.
 from openravepy import *
 import numpy as np
 import random
-import time
+from time import time, sleep
 import traceback
 import TOPP
 from utils.utils import colorize
 from utils import utils, heap, lie
+from IPython import embed
 
 
 ################################################################################
@@ -63,10 +64,10 @@ class SE3Config(object):
 
 class CCTrajectory(object):
     def __init__(self, lie_traj, translation_traj, bimanual_wpts, timestamps):
-        self.lie_traj      = lie_traj
-        self.translation_traj    = translation_traj
-        self.bimanual_wpts = bimanual_wpts
-        self.timestamps    = timestamps[:]
+        self.lie_traj         = lie_traj
+        self.translation_traj = translation_traj
+        self.bimanual_wpts    = bimanual_wpts
+        self.timestamps       = timestamps[:]
             
 
 class CCConfig(object):
@@ -198,11 +199,26 @@ class CCTree(object):
 
 class CCQuery(object):
     '''
-    Class Query stores everything related to a single query.
+    Class CCQuery stores everything related to a single query.
     '''
     def __init__(self, obj_translation_limits, q_robots_start, q_robots_goal,
-                T_obj_start, T_obj_goal=None, nn=-1, step_size=0.7,
-                interpolation_duration=0.5, discr_timestep=1e-2):
+                T_obj_start, T_obj_goal=None, nn=-1, step_size=0.7, 
+                velocity_scale=1, interpolation_duration=None, 
+                discr_timestep=5e-3, discr_check_timestep=None):
+        '''
+        Default step_size (when robot has full velocity, i.e. velocity_scale = 1) 
+        for each trajectory interpolation is 0.7, with interpolation_duration=1.25s 
+        and discr_check_timestep=0.025s. 
+        Defualt discr_timestep is 0.005s.
+        These values are determined by experiments to make sure 
+            1)  planning is not too slow
+            2)  interpolated trajectory would result in joint velocity within limit 
+                (specifically for denso robot)
+            3)  generated trajectory is smooth
+        When user specifies different velocity_scale or step_size, these value 
+        are scaled accordingly to satisfy the abovementioned criteria.
+        '''
+
         # Initialize v_start and v_goal
         SE3_config_start = SE3Config.from_matrix(T_obj_start)
         SE3_config_goal  = SE3Config.from_matrix(T_obj_goal)
@@ -213,11 +229,17 @@ class CCQuery(object):
 
         # Initialize RRTs
         self.treestart              = CCTree(self.v_start, FW)
-        self.treeend                = None # to be initialized when being solved (after grasping pose check is passed)
+        self.treeend                = None  # to be initialized when being solved (after grasping pose check is passed)
         self.nn                     = nn
         self.step_size              = step_size # for tree extension
         self.interpolation_duration = interpolation_duration
-        self.discr_timestep         = discr_timestep # for collision checking
+        self.discr_timestep         = discr_timestep # for waypoints discretization
+        self.discr_check_timestep   = discr_check_timestep # for feasiblity checking
+
+        if self.interpolation_duration is None:
+            self.interpolation_duration = step_size*1.25/(0.7*velocity_scale)
+        if self.discr_check_timestep is None:
+            self.discr_check_timestep   = 0.025/velocity_scale
 
         # traj information
         self.connecting_rot_traj         = None
@@ -351,7 +373,7 @@ class CCPlanner(object):
                                          self._query.upper_limits[i]) 
                              for i in xrange(3)])
         
-        qd_rand = (1e-3) * np.ones(3)
+        qd_rand = np.zeros(3)
         pd_rand = np.zeros(3)
 
         return SE3Config(q_rand, p_rand, qd_rand, pd_rand)
@@ -385,7 +407,7 @@ class CCPlanner(object):
         self._query.treeend = CCTree(self._query.v_goal, BW)
 
 
-    def solve(self, query, timeout=10):
+    def solve(self, query, timeout=20):
         self._query = query
         if self._query.solved:
             self._output_info('This query has already been solved.', 'green')
@@ -396,34 +418,34 @@ class CCPlanner(object):
         t = 0.0
         prev_iter = self._query.iteration_count
         
-        t_begin = time.time()
+        t_begin = time()
         if (self._connect() == REACHED):
             self._query.iteration_count += 1
-            t_end = time.time()
+            t_end = time()
             self._query.running_time += (t_end - t_begin)
             
             self._output_info('Path found', 'green')
             self._output_info('Total number of iterations : {0}'.format(self._query.iteration_count), 'green')
-            self._output_info('Total running time : {0} sec.'.format(self._query.running_time), 'green')
+            self._output_info('Total running time : {0} s.'.format(self._query.running_time), 'green')
             self._query.solved = True
             self._query.generate_final_cctraj()
             return True
 
-        elasped_time = time.time() - t_begin
+        elasped_time = time() - t_begin
         t += elasped_time
         self._query.running_time += elasped_time
 
         while (t < timeout):
             self._query.iteration_count += 1
             self._output_debug('Iteration : {0}'.format(self._query.iteration_count), 'blue')
-            t_begin = time.time()
+            t_begin = time()
 
             SE3_config = self.sample_SE3_config()
             if (self._extend(SE3_config) != TRAPPED):
                 self._output_debug('Tree start : {0}; Tree end : {1}'.format(len(self._query.treestart.vertices), len(self._query.treeend.vertices)), 'green')
 
                 if (self._connect() == REACHED):
-                    t_end = time.time()
+                    t_end = time()
                     self._query.running_time += (t_end - t_begin)
                     self._output_info('Path found', 'green')
                     self._output_info('Total number of iterations : {0}'.format(self._query.iteration_count), 'green')
@@ -432,7 +454,7 @@ class CCPlanner(object):
                     self._query.generate_final_cctraj()
                     return True
                 
-            elasped_time = time.time() - t_begin
+            elasped_time = time() - t_begin
             t += elasped_time
             self._query.running_time += elasped_time
 
@@ -497,7 +519,7 @@ class CCPlanner(object):
                                          rotationMatrixFromQuat(q_end),
                                          qd_beg, qd_end, 
                                          self._query.interpolation_duration)
-            translation_traj_str = utils.traj_str_3rd_degree(p_beg, p_end, pd_end, pd_end, self._query.interpolation_duration)
+            translation_traj_str = utils.traj_str_3rd_degree(p_beg, p_end, pd_beg, pd_end, self._query.interpolation_duration)
 
             # Check translational limit
             # NB: Can skip this step, since it's not likely the traj will exceed the limits given that p_beg and p_end are within limits
@@ -577,7 +599,7 @@ class CCPlanner(object):
                                          rotationMatrixFromQuat(q_end),
                                          qd_beg, qd_end, 
                                          self._query.interpolation_duration)
-            translation_traj_str = utils.traj_str_3rd_degree(p_beg, p_end, pd_end, pd_end, self._query.interpolation_duration)
+            translation_traj_str = utils.traj_str_3rd_degree(p_beg, p_end, pd_beg, pd_end, self._query.interpolation_duration)
 
             # Check translational limit
             # NB: Can skip this step, since it's not likely the traj will exceed the limits given that p_beg and p_end are within limits
@@ -601,10 +623,8 @@ class CCPlanner(object):
             # Check similarity of terminal IK solutions
             eps = 1e-3
             for i in xrange(2):
-                self._output_debug('{0}'.format(v_near.config.q_robots[i]), bold=False)
-                self._output_debug('{0}'.format(bimanual_wpts[i][-1][0:6]), bold=False)
-                passed = utils.distance(v_near.config.q_robots[i], bimanual_wpts[i][-1][0:6]) < eps
-                if not passed:
+                if not utils.distance(v_near.config.q_robots[i], 
+                                    bimanual_wpts[i][-1][0:6]) < eps:
                     break
             if not passed:
                 self._output_debug('TRAPPED : IK solution discrepancy (robot {0})'.format(i), bold=False)
@@ -639,7 +659,7 @@ class CCPlanner(object):
         with self.env:
             self._enable_robots_collision(False)
 
-            for t in np.append(np.arange(0, translation_traj.duration, self._query.discr_timestep), translation_traj.duration):
+            for t in np.append(np.arange(0, translation_traj.duration, self._query.discr_check_timestep), translation_traj.duration):
                 T[0:3, 0:3] = lie.EvalRotation(R_beg, rot_traj, t)
                 T[0:3, 3] = translation_traj.Eval(t)
 
@@ -682,7 +702,7 @@ class CCPlanner(object):
         '''
         lie_traj = lie.LieTraj(rot_mat_list, [rot_traj])
 
-        passed, bimanual_wpts, timestamps = self.bimanual_obj_tracker.plan(lie_traj, translation_traj, self.bimanual_T_rel, ref_sols, timestep=self._query.discr_timestep)
+        passed, bimanual_wpts, timestamps = self.bimanual_obj_tracker.plan(lie_traj, translation_traj, self.bimanual_T_rel, ref_sols, self._query.discr_timestep, self._query.discr_check_timestep)
         if not passed:
             return False, [], []
 
@@ -729,15 +749,42 @@ class CCPlanner(object):
             self.obj.SetTransform(T_obj)
             self.robots[0].SetActiveDOFValues(q_left)
             self.robots[1].SetActiveDOFValues(q_right)
-            time.sleep(refresh_step)
+            sleep(refresh_step)
+
+    # def visualize_cctraj(self, cctraj, t0=None, t1=None, speed=1.0):
+    #     if t0 is None: 
+    #         t0 = 0
+    #     if t1 is None: 
+    #         t1 = cctraj.lie_traj.duration
+    #     if not 0 <= t0 < t1 <= cctraj.lie_traj.duration:
+    #         raise CCPlannerExceptionExce('Incorrect time stamp.')
+
+    #     timestamps = cctraj.timestamps
+    #     sampling_step = timestamps[1] - timestamps[0]
+    #     refresh_step  = sampling_step / speed
+    #     lie_traj   = cctraj.lie_traj
+    #     translation_traj = cctraj.translation_traj
+    #     left_wpts  = cctraj.bimanual_wpts[0]
+    #     right_wpts = cctraj.bimanual_wpts[1]
+
+    #     t_index0 = int(t0 / sampling_step)
+    #     t_index1 = int(t1 / sampling_step)
+    #     T_obj = np.eye(4)
+    #     for (q_left, q_right, t) in zip(left_wpts, right_wpts, timestamps)[t_index0:t_index1+1]:
+    #         T_obj[0:3, 0:3] = lie_traj.EvalRotation(t)
+    #         T_obj[0:3, 3] = translation_traj.Eval(t)
+    #         self.obj.SetTransform(T_obj)
+    #         self.robots[0].SetActiveDOFValues(q_left)
+    #         self.robots[1].SetActiveDOFValues(q_right)
+    #         sleep(refresh_step)
 
             
-    def shortcut(self, query, maxiter=50):
+    def shortcut(self, query, maxiter=20):
         '''    
         Shortcut query.cctraj and replace it with the new one.
         '''
         # Shortcutting parameters
-        min_shortcut_duration = 0.1
+        min_shortcut_duration = query.interpolation_duration / 2.0
         min_n_timesteps = int(min_shortcut_duration / query.discr_timestep)
 
         # Statistics
@@ -747,97 +794,91 @@ class CCPlanner(object):
         not_shorter_count    = 0
         successful_count     = 0
 
-        duration = query.cctraj.lie_traj.duration
+        lie_traj         = query.cctraj.lie_traj
+        translation_traj = query.cctraj.translation_traj
+        timestamps       = query.cctraj.timestamps[:]
+        left_wpts        = query.cctraj.bimanual_wpts[0][:]
+        right_wpts       = query.cctraj.bimanual_wpts[1][:]
 
-        new_lie_traj         = query.cctraj.lie_traj
-        new_translation_traj = query.cctraj.translation_traj
-        new_timestamps       = query.cctraj.timestamps[:]
-        new_left_wpts        = query.cctraj.bimanual_wpts[0][:]
-        new_right_wpts       = query.cctraj.bimanual_wpts[1][:]
-
-        # Create an accumulated distance list
-        accumulated_dist = utils.generate_accumulated_SE3_dist_list(new_lie_traj, new_translation_traj, query.discr_timestep)        
-
-        for i in xrange(maxiter):
-            if (duration < min_shortcut_duration):
-                self._output_info('Trajectory duration shorter than minimum shortcut duration.', 'yellow')
-                break
-            
-            self._output_debug('Iteration {0}'.format(i + 1), 'blue')
+        t_begin = time()
+        
+        for i in xrange(maxiter):  
+            self._output_debug('Iteration {0}'.format(i + 1), color='blue', bold=False)
 
             # Sample two time instants
-            timestamps_indices = range(len(new_timestamps))
+            timestamps_indices = range(len(timestamps))
             t0_index = RNG.choice(timestamps_indices[:-min_n_timesteps])
             t1_index = RNG.choice(timestamps_indices[t0_index + min_n_timesteps:])
-            t0 = new_timestamps[t0_index]
-            t1 = new_timestamps[t1_index]
-
-            self._output_debug('t0_index = {0}, t0 = {1}'.format(t0_index, t0), bold=False)
-            self._output_debug('t1_index = {0}, t1 = {1}'.format(t1_index, t1), bold=False)
+            t0 = timestamps[t0_index]
+            t1 = timestamps[t1_index]
 
             # Interpolate a new SE(3) trajectory segment
-            R0 = new_lie_traj.EvalRotation(t0)
-            R1 = new_lie_traj.EvalRotation(t1)
-            rot_traj = lie.InterpolateSO3(R0, R1,
-                                         new_lie_traj.EvalOmega(t0),
-                                         new_lie_traj.EvalOmega(t1),
-                                         query.interpolation_duration)
+            new_R0 = lie_traj.EvalRotation(t0)
+            new_R1 = lie_traj.EvalRotation(t1)
+            new_rot_traj = lie.InterpolateSO3(new_R0, new_R1, lie_traj.EvalOmega(t0), lie_traj.EvalOmega(t1), query.interpolation_duration)
+            new_lie_traj = lie.LieTraj([new_R0, new_R1], [new_rot_traj])
 
-            translation_traj_str = utils.traj_str_3rd_degree(new_translation_traj.Eval(t0), new_translation_traj.Eval(t1),
-             new_translation_traj.Evald(t0), new_translation_traj.Evald(t1), query.interpolation_duration)
-            translation_traj = TOPP.Trajectory.PiecewisePolynomialTrajectory.FromString(translation_traj_str)
+            new_translation_traj_str = utils.traj_str_3rd_degree(translation_traj.Eval(t0), translation_traj.Eval(t1), translation_traj.Evald(t0), translation_traj.Evald(t1), query.interpolation_duration)
+            new_translation_traj = TOPP.Trajectory.PiecewisePolynomialTrajectory.FromString(new_translation_traj_str) 
+            
+            # Check SE(3) trajectory length      
+            accumulated_dist     = utils.compute_accumulated_SE3_distance(
+                                lie_traj, translation_traj, t0=t0, t1=t1,
+                                discr_timestep=query.discr_check_timestep)
+            new_accumulated_dist = utils.compute_accumulated_SE3_distance(
+                                new_lie_traj, new_translation_traj,
+                                discr_timestep=query.discr_check_timestep)
+
+            if new_accumulated_dist >= accumulated_dist:
+                not_shorter_count += 1
+                self._output_info('Not shorter', color='yellow', bold=False)
+                continue
 
             # Check collision (object trajectory)
-            if not self.is_collision_free_SE3_traj(rot_traj, translation_traj, R0):          
+            if not self.is_collision_free_SE3_traj(new_rot_traj, 
+                                        new_translation_traj, new_R0):          
                 in_collision_count += 1
+                self._output_info('In collision', color='yellow', bold=False)
                 continue
 
             # Check reachability (object trajectory)
-            passed, bimanual_wpts, timestamps = self.check_SE3_traj_reachability(rot_traj, translation_traj, [R0, R1], [new_left_wpts[t0_index], new_right_wpts[t0_index]])
+            passed, bimanual_wpts, new_timestamps = self.check_SE3_traj_reachability(new_rot_traj, new_translation_traj, [new_R0, new_R1], [left_wpts[t0_index], right_wpts[t0_index]])
 
             if not passed:
                 not_reachable_count += 1
+                self._output_info('Not reachable', color='yellow', bold=False)
                 continue
 
             # Check continuity between newly generated bimanual_wpts and original one
             eps = 1e-3
-            if not (utils.distance(bimanual_wpts[0][0], new_left_wpts[t0_index]) < eps and 
-                    utils.distance(bimanual_wpts[1][0], new_right_wpts[t0_index]) < eps):
+            if not (utils.distance(bimanual_wpts[0][0], left_wpts[t0_index]) < eps and utils.distance(bimanual_wpts[1][0], right_wpts[t0_index]) < eps):
                 not_continuous_count += 1
-                continue
-
-            # Check SE(3) trajectory length      
-            accumulated_dist = utils.generate_accumulated_SE3_dist_list(new_lie_traj, new_translation_traj, query.discr_timestep)
-
-            rot_mat_list = [R0, R1]
-            rot_trajslist = [rot_traj]
-            lie_traj = lie.LieTraj(rot_mat_list, rot_trajslist)
-            new_accumulated_dist = utils.generate_accumulated_SE3_dist_list(lie_traj, translation_traj, query.discr_timestep)
-
-            if new_accumulated_dist[-1] >= (accumulated_dist[t1_index] - accumulated_dist[t0_index]):
-                not_shorter_count += 1
+                self._output_info('Not continuous', color='yellow', bold=False)
                 continue
 
             # Now the new trajectory passes all tests
             # Replace all the old trajectory segments with the new ones
-
-            new_lie_traj         = utils.replace_lie_traj_segment(new_lie_traj, lie_traj.trajlist[0], t0, t1)            
-            new_translation_traj = utils.replace_traj_segment(new_translation_traj, translation_traj, t0, t1)
-
-            first_timestamp_chunk = new_timestamps[:t0_index + 1]
-            last_timestamp_chunk_offset = new_timestamps[t1_index]
-            last_timestamp_chunk = [t - last_timestamp_chunk_offset for t in new_timestamps[t1_index:]]
-
-            new_timestamps = utils.merge_timestamps_list([first_timestamp_chunk, timestamps, last_timestamp_chunk])
-            new_left_wpts  = utils.merge_wpts_list([new_left_wpts[:t0_index + 1], bimanual_wpts[0], new_left_wpts[t1_index:]])            
-            new_right_wpts = utils.merge_wpts_list([new_right_wpts[:t0_index + 1], bimanual_wpts[1], new_right_wpts[t1_index:]])
+            lie_traj = utils.replace_lie_traj_segment(lie_traj, 
+                                        new_lie_traj.trajlist[0], t0, t1)            
+            translation_traj = utils.replace_traj_segment(translation_traj,
+                                                new_translation_traj, t0, t1)
             
-            self._output_info('Shortcutting successful.', 'green')
+            first_timestamp_chunk       = timestamps[:t0_index + 1]
+            last_timestamp_chunk_offset = timestamps[t1_index]
+            last_timestamp_chunk        = [t - last_timestamp_chunk_offset for t in timestamps[t1_index:]]
+
+            timestamps = utils.merge_timestamps_list([first_timestamp_chunk, new_timestamps, last_timestamp_chunk])
+            left_wpts  = utils.merge_wpts_list([left_wpts[:t0_index + 1], bimanual_wpts[0], left_wpts[t1_index:]])            
+            right_wpts = utils.merge_wpts_list([right_wpts[:t0_index + 1], bimanual_wpts[1], right_wpts[t1_index:]])
+            
+            self._output_info('Shortcutting successful.', color='green', bold=False)
             successful_count += 1
 
-        self._output_debug('successful_count = {0}, in_collision_count = {1}, not_shorter_count = {2}, not_reachable_count = {3}, not_continuous_count = {4}'.format(successful_count, in_collision_count, not_shorter_count, not_reachable_count, not_continuous_count), 'yellow')
+        t_end = time()
+        self._output_info('Shortcutting done. Total running time : {0} s.'. format(t_end - t_begin), 'green')
+        self._output_debug('Successful: {0} times. In collision: {1} times. Not shorter: {2} times. Not reachable: {3} times. Not continuous: {4} times.'.format(successful_count, in_collision_count, not_shorter_count, not_reachable_count, not_continuous_count), 'yellow')
 
-        query.cctraj = CCTrajectory(new_lie_traj, new_translation_traj, [new_left_wpts, new_right_wpts], new_timestamps)
+        query.cctraj = CCTrajectory(lie_traj, translation_traj, [left_wpts, right_wpts], timestamps)
         
     def _enable_robots_collision(self, enable=True):
         for robot in self.robots:
@@ -882,13 +923,11 @@ class BimanualObjectTracker(object):
         self._nrobots = len(robots)
         self._vmax    = robots[0].GetDOFVelocityLimits()[0:self.ndof]
         self._jmax    = robots[0].GetDOFLimits()[1][0:self.ndof]
-        self._maxiter = 10
+        self._maxiter = 8
         self._weight  = 10.
         self._tol     = 0.5e-3
-        self._gain    = 10.
-        self._dt      = 0.1 # time step for ik solver    
         
-    def plan(self, lie_traj, translation_traj, bimanual_T_rel, q_robots_init, timestep=0.01):
+    def plan(self, lie_traj, translation_traj, bimanual_T_rel, q_robots_init, discr_timestep, discr_check_timestep):
         '''
         Plan a trajectory for the two robots to follow the object
         trajectory specified by lie_traj and translation_traj.
@@ -901,8 +940,10 @@ class BimanualObjectTracker(object):
             Relative transformations from end-effectors of the two robots to object
         q_robots_init : list
             Initial configurations of the two robots
-        timestep : float, optional
-            Time resolution for tracking.
+        discr_timestep : float
+            Time resolution for tracking
+        discr_check_timestep : float
+            Time resolution for feasibility checking
 
         Returns
         -------
@@ -919,6 +960,7 @@ class BimanualObjectTracker(object):
         T_obj[0:3, 3] = translation_traj.Eval(0)
         self.obj.SetTransform(T_obj)
         duration = lie_traj.duration
+        cycle_length = int(discr_check_timestep / discr_timestep)
 
         bimanual_T_gripper = []
         for i in xrange(self._nrobots):
@@ -931,13 +973,16 @@ class BimanualObjectTracker(object):
         for i in xrange(self._nrobots):
             bimanual_wpts[i].append(q_robots_init[i])
         timestamps.append(0.)
-        
-        self._jd_max = self._vmax * timestep
+
+        # Check feasibility and compute IK only once per cycle to ensure speed
+        # Other IK solutions are generated by interpolation
         q_robots_prev = q_robots_init
-        for t in np.append(np.arange(timestep, duration, timestep), duration):
+        t_prev = 0
+        self._jd_max = self._vmax * discr_check_timestep
+        for t in np.append(np.arange(discr_check_timestep, duration, discr_check_timestep), duration):
             T_obj[0:3, 0:3] = lie_traj.EvalRotation(t)
-            T_obj[0:3, 3] = translation_traj.Eval(t)
-            
+            T_obj[0:3, 3] = translation_traj.Eval(t)        
+
             bimanual_T_gripper = []
             for i in xrange(self._nrobots):
                 bimanual_T_gripper.append(np.dot(T_obj, bimanual_T_rel[i]))
@@ -949,22 +994,25 @@ class BimanualObjectTracker(object):
                     return False, [], []
                 q_robots_next.append(q_sol)
 
-            # Check feasibility
             if not self._is_feasible_bimanual_config(q_robots_next, q_robots_prev, T_obj):
                 return False, [], []
 
+            # New bimanual config now passed all checks
+            # Interpolate waypoints in-between
             for i in xrange(self._nrobots):
-                bimanual_wpts[i].append(q_robots_next[i])
-            timestamps.append(t)
+                bimanual_wpts[i] += utils.discretize_wpts(q_robots_prev[i], q_robots_next[i], cycle_length)
+            timestamps += list(np.linspace(t_prev+discr_timestep, t, cycle_length))
+            t_prev = t
             q_robots_prev = q_robots_next
         
         return True, bimanual_wpts, timestamps
 
     def _is_feasible_bimanual_config(self, q_robots, q_robots_prev, T_obj):
-        # Check robot DOF position and velocity limits
+
+        # Check robot DOF velocity limits (position limits alreadly checked in _compute_IK)
         for i in xrange(self._nrobots):
             for j in xrange(self.ndof):
-                if abs(q_robots[i][j]) > self._jmax[i] or abs(q_robots[i][j] - q_robots_prev[i][j]) > self._jd_max[j]:
+                if abs(q_robots[i][j] - q_robots_prev[i][j]) > self._jd_max[j]:
                     return False
 
         # Update environment for collision checking
@@ -997,9 +1045,8 @@ class BimanualObjectTracker(object):
             target_pose[0:4] *= -1.
 
         cur_objective = 5000. # some arbitrary number
-        i = 0 # iteration counter
         reached = False
-        while i < self._maxiter:
+        for i in xrange(self._maxiter):
             prev_objective = cur_objective
             cur_objective = self._compute_objective(robot_index, target_pose, q)
             if abs(cur_objective - prev_objective) < self._tol and cur_objective < self._tol:
@@ -1007,11 +1054,10 @@ class BimanualObjectTracker(object):
                 reached = True
                 break
 
-            i += 1
             q_delta = self._compute_q_delta(robot_index, target_pose, q)
-            
-            q_delta = np.maximum(np.minimum(q_delta, self._vmax), -self._vmax)
-            q = q + (q_delta * self._dt)
+            q = q + q_delta
+
+            # Ensure IK solution returned is within joint position limit
             q = np.maximum(np.minimum(q, self._jmax), -self._jmax)
             
         if not reached:
@@ -1051,10 +1097,8 @@ class BimanualObjectTracker(object):
         # Full Jacobian
         J = np.vstack([J_quat, J_trans])
 
-        weight = 10.0
-
         # J is a [7x6] matrix, need to use pinv()
-        q_delta = weight * np.dot(np.linalg.pinv(J), (target_pose - cur_pose))
+        q_delta = np.dot(np.linalg.pinv(J), (target_pose - cur_pose))
         return q_delta
 
     def _output_debug(self, msg, color=None, bold=True):

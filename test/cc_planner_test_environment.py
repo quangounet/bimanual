@@ -26,9 +26,9 @@ if __name__ == "__main__":
     cage = env.ReadKinBodyXMLFile('../xml/objects/cage.kinbody.xml')
     env.Add(cage)
 
-    # Ignore limits checking for now
-    left_robot.SetDOFVelocityLimits(left_robot.GetDOFVelocityLimits() * 100)
-    right_robot.SetDOFVelocityLimits(right_robot.GetDOFVelocityLimits() * 100)
+    velocity_scale = 0.5
+    utils.scale_DOF_limits(left_robot, v=velocity_scale)
+    utils.scale_DOF_limits(right_robot, v=velocity_scale)
 
     # Add collision checker
     collision_checker = RaveCreateCollisionChecker(env, 'ode')
@@ -44,14 +44,14 @@ if __name__ == "__main__":
     # Load sample query info
     with open('query_info.pkl', 'rb') as f:
         obj_translation_limits, q_robots_start, q_robots_goal, T_obj_start, T_obj_goal = pickle.load(f)
-    ccquery = CCQuery(obj_translation_limits, q_robots_start, q_robots_goal, T_obj_start, T_obj_goal) # Can omit T_obj_goal since not necessary
-
+    ccquery = CCQuery(obj_translation_limits, q_robots_start, q_robots_goal, T_obj_start, T_obj_goal, velocity_scale=velocity_scale) # Can omit T_obj_goal since not necessary
+    
     ccplanner = CCPlanner(cage, [left_robot, right_robot], debug=True)
     res = ccplanner.solve(ccquery, timeout=20)
 
     embed()
     exit(0)
     
-    ccplanner.visualize_cctraj(ccquery.cctraj, speed=0.5)
-    ccplanner.shortcut(ccquery, maxiter=50)
-    ccplanner.visualize_cctraj(ccquery.cctraj, speed=0.5)
+    ccplanner.visualize_cctraj(ccquery.cctraj, speed=1)
+    ccplanner.shortcut(ccquery, maxiter=20)
+    ccplanner.visualize_cctraj(ccquery.cctraj, speed=1)

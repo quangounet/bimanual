@@ -119,10 +119,10 @@ def traj_str_from_traj_list(traj_list):
     return traj_str
 
 def replace_traj_segment(original_traj, traj_segment, t0, t1):
-    """
+    '''
     Replace the segment (t0, t1) in the (arbitrary degree) original_traj 
     with an (arbitrary degree) traj_segment.
-    """
+    '''
     assert(t1 > t0)
     
     new_chunk_list = []
@@ -171,10 +171,10 @@ def replace_traj_segment(original_traj, traj_segment, t0, t1):
     return Trajectory.PiecewisePolynomialTrajectory(new_chunk_list)
 
 def replace_lie_traj_segment(original_lie_traj, lie_traj_segment, t0, t1):
-    """
+    '''
     Replace the lie traj segment (t0, t1) in the (arbitrary degree) original_lie_traj 
     with an (arbitrary degree) lie_traj_segment.
-    """
+    '''
     assert(t1 > t0)
 
     new_traj_list = []
@@ -275,14 +275,14 @@ def SE3_distance(T0, T1, c=None, d=None): # left invariance
     return np.sqrt(c*(SO3_distance(R0, R1)**2) + d*(R3_distance(b0, b1)**2))
 
 def distance(q1, q2, metrictype=1):
-    """
+    '''
     Return the distance between two robot configurations (joint values) according to the specified distance metric.
     
     metrictype
     0 : L2 norm squared
     1 : L2 norm
     2 : L1 norm
-    """
+    '''
     delta_q = q1 - q2
     if (metrictype == 1):
         return np.dot(delta_q, delta_q)
@@ -294,9 +294,9 @@ def distance(q1, q2, metrictype=1):
         raise Exception("Unknown Distance Metric.")
 
 def generate_accumulated_dist_list(traj, metrictype=1, discr_timestep=0.005):
-    """
+    '''
     Return a list of accumulated robot config distances at each timestamp of the given trajectory
-    """
+    '''
     delta_dist_list = [0.0]
     timestamps = np.append(np.arange(discr_timestep, traj.duration, discr_timestep), traj.duration)
 
@@ -310,33 +310,78 @@ def generate_accumulated_dist_list(traj, metrictype=1, discr_timestep=0.005):
     accumulated_dist_list = [sum(delta_dist_list[0:i+1]) for i in xrange(len(delta_dist_list))]
     return accumulated_dist_list
 
-def generate_accumulated_SE3_dist_list(lie_traj, trans_traj, discr_timestep):
-    """
-    Return a list of accumulated SE3 distances at each timestamp of the given trajectory (including lie traj and trans traj)
-    """
-    delta_dist_list = [0.0]
+def compute_accumulated_SE3_distance(lie_traj, translation_traj, t0=None, t1=None, discr_timestep=0.005):
+    '''
+    Return accumulated SE3 distance in the given trajectory by computing directly.
+    This approach is much faster than using generate_accumulated_SE3_dist_list().
+    '''
+    
+    if t0 is None: 
+        t0 = 0    
+    if t1 is None: 
+        t1 = lie_traj.duration
+    if not 0 <= t0 < t1 <= lie_traj.duration:
+        raise Exception('Incorrect time stamp.')
+
+    accumulated_dist = 0
+    timestamps = np.append(np.arange(t0 + discr_timestep, t1, discr_timestep), t1)
+
     Tprev = np.eye(4)
-    Tprev[0:3, 0:3] = lie_traj.EvalRotation(0)
-    Tprev[0:3, 3] = trans_traj.Eval(0)
     Tcur = np.eye(4)
+    Tprev[0:3, 0:3] = lie_traj.EvalRotation(t0)
+    Tprev[0:3, 3] = translation_traj.Eval(t0)
+    for t in timestamps:
+        Tcur[0:3, 0:3] = lie_traj.EvalRotation(t)
+        Tcur[0:3, 3] = translation_traj.Eval(t)
         
-    timestamps = np.arange(discr_timestep, lie_traj.duration, discr_timestep)
-    timestamps = np.append(timestamps, lie_traj.duration)
+        delta_dist = SE3_distance(Tprev, Tcur)
+        accumulated_dist += delta_dist
+        
+        Tprev = np.array(Tcur)
+
+    return accumulated_dist
+
+def generate_accumulated_SE3_dist_list(lie_traj, translation_traj, discr_timestep, discr_compute_timestep):
+    '''
+    Return a list of accumulated SE3 distances at each timestamp of the given trajectory (including lie traj and trans traj)
+    NB: The trajectory is to be sliced into n segments
+
+    Parameters
+    ----------
+    discr_timestep: float, length = n
+        Timestep between each item in the returned list
+    discr_compute_timestep: float, length = n+1
+        Real timestep used to compute distance, each contains a cycle of discr_timestep. All timesteps within one cycle will share the same accumulated distance value to ensure speed.
+    '''
+    delta_dist_list = []
+    Tprev = np.eye(4)
+    Tcur = np.eye(4)
+    Tprev[0:3, 0:3] = lie_traj.EvalRotation(0)
+    Tprev[0:3, 3] = translation_traj.Eval(0)
+        
+    timestamps = np.arange(discr_compute_timestep, lie_traj.duration, discr_compute_timestep)
+    if not np.isclose(timestamps[-1], lie_traj.duration):
+        np.append(timestamps, lie_traj.duration)
+
+    cycle_length = int(discr_compute_timestep / discr_timestep)
     
     for t in timestamps:
         Tcur[0:3, 0:3] = lie_traj.EvalRotation(t)
-        Tcur[0:3, 3] = trans_traj.Eval(t)
+        Tcur[0:3, 3] = translation_traj.Eval(t)
         
         delta_dist = SE3_distance(Tprev, Tcur)
         delta_dist_list.append(delta_dist)
         
         Tprev = np.array(Tcur)
 
-    accumulated_dist_list = [sum(delta_dist_list[0:i]) for i in xrange(len(delta_dist_list))]
+    accumulated_dist_list = [0.0]
+    for i in xrange(len(delta_dist_list)):
+        accumulated_dist_list += [sum(delta_dist_list[0:i+1])] * cycle_length
+
     return accumulated_dist_list
 
 
-############################## Trajtectory manipulation ##############################
+########################### Trajtectory manipulation ###########################
 def merge_timestamps_list(timestamps_list):
     '''
     merge_timestamps_list merges timestamps lists of the form [0, 1, 2,
@@ -375,6 +420,23 @@ def merge_wpts_list(wpts_list, eps=1e-3):
         
     return new_wpts
 
+def discretize_wpts(q_init, q_final, step_count):
+    '''
+    Return a list of waypoints in-between initial and final waypoints, discretized according to step_count.
+    q_init will not be in the list.
+
+    Parameters
+    ----------
+    q_init: numpy.ndarray
+    q_final: numpy.ndarray
+    step_count: int
+        Total number of waypoints to generate excluding q_init
+    '''
+    q_delta = (q_final - q_init) / step_count
+    wpts = []
+    for i in xrange(step_count):
+        wpts.append(q_init + q_delta*(i+1))
+    return wpts
 
 ############################## Manipulator related ##############################
 def compute_endeffector_transform(manip, q):
@@ -408,7 +470,12 @@ def load_IK_model(robots):
             rospy.loginfo('Robot:[' + robot_name + '] IKFast not found. Generating IKFast solution...')
             ikmodel.autogenerate()
 
-
+def scale_DOF_limits(robot, v=1, a=1):
+    '''
+    Adjust DOF limits of the given robot by specified multiplier
+    '''
+    robot.SetDOFVelocityLimits(robot.GetDOFVelocityLimits() * v)
+    robot.SetDOFAccelerationLimits(robot.GetDOFAccelerationLimits() * a)
 
 ############################## Output formatting ##############################
 colors = dict()

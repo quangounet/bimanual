@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Kinbody name="pin">
+  <body type="dynamic">
+    <geom type="cylinder">
+      <radius>0.004</radius>
+      <height>0.03</height>
+      <diffusecolor>0.8 0.2 0.2</diffusecolor>
+    </geom>
+  </body>
+</Kinbody>

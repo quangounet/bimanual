@@ -1,8 +1,6 @@
-#!/usr/bin/env python
-
+import openravepy as orpy
 import pickle
 import numpy as np
-from openravepy import *
 from IPython import embed
 
 import sys
@@ -16,7 +14,7 @@ if __name__ == "__main__":
   
   # Load OpenRAVE environment
   scene_file = '../xml/worlds/bimanual_ikea_assembly.env.xml'
-  env = Environment()
+  env = orpy.Environment()
   env.SetViewer('qtcoin')
   env.Load(scene_file)
 
@@ -31,7 +29,7 @@ if __name__ == "__main__":
   utils.scale_DOF_limits(right_robot, v=velocity_scale)
 
   # Add collision checker
-  collision_checker = RaveCreateCollisionChecker(env, 'ode')
+  collision_checker = orpy.RaveCreateCollisionChecker(env, 'ode')
   env.SetCollisionChecker(collision_checker)
 
   manip_name = 'denso_ft_sensor_gripper'

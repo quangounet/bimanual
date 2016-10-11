@@ -2,7 +2,7 @@
 Utility functions used for motion planners in ikea_planner package.
 """
 
-from openravepy import *
+import openravepy as orpy
 from pylab import *
 
 from TOPP import Trajectory
@@ -11,6 +11,10 @@ from TOPP import Utilities
 import string
 import numpy as np
 import lie
+
+import logging
+logging.basicConfig(format='[%(levelname)s] [%(name)s: %(funcName)s] %(message)s', level=logging.DEBUG)
+log = logging.getLogger(__name__)
 
 INF = np.inf
 EPS = 1e-12
@@ -113,12 +117,11 @@ def check_config_DOF_limits(robot, q):
   @rtype:  bool
   @return: B{True} if the configuration is within limits.
   """
-  position_limits = robot.GetDOFLimits()[1]
+  lower_limits, upper_limits = robot.GetDOFLimits()
 
-  for i in len(q):
-    if abs(q[i]) > position_limits[i]: 
+  for (i, val) in enumerate(q):
+    if (val < lower_limits[i]) or (val > upper_limits[i]):
       return False
-
   return True
 
 def check_traj_str_DOF_limits(robot, traj_str):
@@ -136,7 +139,7 @@ def check_traj_str_DOF_limits(robot, traj_str):
   traj_info = string.split(traj_str, "\n")
   dur = float(traj_info[0])
   ndof = int(traj_info[1])
-  position_limits = robot.GetDOFLimits()[1]
+  lower_limits, upper_limits = robot.GetDOFLimits()
   velocity_limits = robot.GetDOFVelocityLimits()
 
   for i in range(ndof):
@@ -149,7 +152,7 @@ def check_traj_str_DOF_limits(robot, traj_str):
   
     # check DOF values
     for x in q_cri_points:
-      if abs(q(x)) > position_limits[i]:
+      if (x < lower_limits[i]) or (x > upper_limits[i]):
         return False
     
     # check DOF velocities
@@ -185,7 +188,7 @@ def check_translation_traj_str_limits(upper_limits, lower_limits, traj_str):
 
     # check limits
     for x in p_cri_points:
-      if not lower_limits[i] <= abs(p(x)) <= upper_limits[i]:
+      if not (lower_limits[i] <= p(x) <= upper_limits[i]):
         return False
    
   return True
@@ -662,10 +665,11 @@ def discretize_wpts(q_init, q_final, step_count):
   @return: A list of interpolated waypoints. This includes C{q_final}
            but not C{q_init}, with a length of C{step_count}.
   """
+  assert(step_count > 0)
   q_delta = (q_final - q_init) / step_count
   wpts = []
   for i in xrange(step_count):
-    wpts.append(q_init + q_delta*(i+1))
+    wpts.append(q_init + q_delta*(i + 1))
   return wpts
 
 ############################## Manipulator related ##############################
@@ -682,10 +686,9 @@ def compute_endeffector_transform(manip, q):
   @return: A 4x4 transformation matrix of the manipulator's end-effector.
   """
   robot = manip.GetRobot()
-  q_orig = robot.GetActiveDOFValues()
-  robot.SetActiveDOFValues(q)
-  T = manip.GetEndEffectorTransform()
-  robot.SetActiveDOFValues(q_orig)
+  with robot:
+    robot.SetActiveDOFValues(q)
+    T = manip.GetEndEffectorTransform()
   return T
 
 def disable_gripper(robots):
@@ -707,10 +710,9 @@ def load_IK_model(robots):
   @param robots: A list of robots to be loaded.
   """
   for robot in robots:    
-    ikmodel = databases.inversekinematics.InverseKinematicsModel(robot, iktype=IkParameterization.Type.Transform6D)    
+    ikmodel = orpy.databases.inversekinematics.InverseKinematicsModel(robot, iktype=orpy.IkParameterization.Type.Transform6D)    
     if (not ikmodel.load()):
-      robot_name = robot.GetName()
-      rospy.loginfo('Robot:[' + robot_name + '] IKFast not found. Generating IKFast solution...')
+      log.info('Robot:[{0}] IKFast not found. Generating IKFast solution...'.format(robot.GetName()))
       ikmodel.autogenerate()
 
 def scale_DOF_limits(robot, v=1, a=1):
@@ -726,7 +728,6 @@ def scale_DOF_limits(robot, v=1, a=1):
   """
   robot.SetDOFVelocityLimits(robot.GetDOFVelocityLimits() * v)
   robot.SetDOFAccelerationLimits(robot.GetDOFAccelerationLimits() * a)
-
 
 def compute_bimanual_goal_configs(robots, obj, q_robots_cur, q_robots_grasp, T_obj_cur, T_obj_goal):
   """
@@ -751,8 +752,7 @@ def compute_bimanual_goal_configs(robots, obj, q_robots_cur, q_robots_grasp, T_o
   def restore():
     obj.Enable(True)
     obj.SetTransform(T_obj_cur)
-    for (robot, q_robot_cur, q_robot_grasp) in zip(robots, q_robots_cur,
-                                                 q_robots_grasp):
+    for (robot, q_robot_cur, q_robot_grasp) in zip(robots, q_robots_cur, q_robots_grasp):
       robot.Enable(True)
       robot.SetDOFValues(np.append(q_robot_cur, q_robot_grasp))
 
@@ -761,17 +761,16 @@ def compute_bimanual_goal_configs(robots, obj, q_robots_cur, q_robots_grasp, T_o
     robot.Enable(False)
 
   q_robots_new = []
-  for (robot, q_robot_cur, q_robot_grasp) in zip(robots, q_robots_cur,
-                                                 q_robots_grasp):
+  for (robot, q_robot_cur, q_robot_grasp) in zip(robots, q_robots_cur, q_robots_grasp):
     robot.Enable(True)
     robot.SetActiveDOFValues(q_robot_cur)
     manip = robot.GetActiveManipulator()
     T_ef_cur = compute_endeffector_transform(manip, q_robot_cur)
     T_ef_new = np.dot(T_obj_goal, np.dot(np.linalg.inv(T_obj_cur), T_ef_cur))
-    q_robot_new = manip.FindIKSolution(T_ef_new, IkFilterOptions.CheckEnvCollisions)
+    q_robot_new = manip.FindIKSolution(T_ef_new, orpy.IkFilterOptions.CheckEnvCollisions)
     if q_robot_new is None:
       restore()
-      print robot.GetName() + ': No IK solution exists.'
+      log.info('{0} : No IK solution exists.'.format(robot.GetName()))
       return None
     q_robots_new.append(q_robot_new)
     robot.SetDOFValues(np.append(q_robot_new, q_robot_grasp * 0.9))
@@ -780,7 +779,7 @@ def compute_bimanual_goal_configs(robots, obj, q_robots_cur, q_robots_grasp, T_o
   obj.Enable(True)
   if obj.GetEnv().CheckCollision(obj):
     restore()
-    print 'Object in collision.'
+    log.info('Object in collision.')
     return None
 
   restore()

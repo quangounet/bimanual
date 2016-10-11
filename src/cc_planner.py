@@ -3,7 +3,7 @@ A closed-chain motion planner.
 Modified from ClosedChainPlanner.py developed by Puttichai.
 """
 
-from openravepy import *
+import openravepy as orpy
 import numpy as np
 import random
 from time import time, sleep
@@ -12,6 +12,9 @@ import TOPP
 from utils.utils import colorize
 from utils import utils, heap, lie
 from IPython import embed
+import logging
+logging.basicConfig(format='[%(levelname)s] [%(name)s: %(funcName)s] %(message)s', level=logging.DEBUG)
+log = logging.getLogger(__name__)
 
 # Global parameters
 FW       = 0
@@ -20,10 +23,10 @@ REACHED  = 0
 ADVANCED = 1
 TRAPPED  = 2
 
-IK_CHECK_COLLISION = IkFilterOptions.CheckEnvCollisions
-IK_IGNORE_COLLISION = IkFilterOptions.IgnoreSelfCollisions
+IK_CHECK_COLLISION = orpy.IkFilterOptions.CheckEnvCollisions
+IK_IGNORE_COLLISION = orpy.IkFilterOptions.IgnoreSelfCollisions
 
-RNG = random.SystemRandom()
+_RNG = random.SystemRandom()
 
 class SE3Config(object):
   """
@@ -45,19 +48,22 @@ class SE3Config(object):
     @param pd: Time derivative of p (translational velocity.
     """
     quat_length = np.linalg.norm(q)
+    assert(quat_length > 0)
     self.q = q / quat_length
     if qd is None:
       self.qd = np.zeros(3)
     else:
-      self.qd = qd
+      # Need to make sure it copies the values
+      self.qd = np.array(qd)
 
     self.p = p
     if pd is None:
       self.pd = np.zeros(3)
     else:
-      self.pd = pd
+      # Need to make sure it copies the values
+      self.pd = np.array(pd)
 
-    self.T = matrixFromPose(np.hstack([self.q, self.p]))
+    self.T = orpy.matrixFromPose(np.hstack([self.q, self.p]))
 
   @staticmethod
   def from_matrix(T):
@@ -73,7 +79,7 @@ class SE3Config(object):
     if T is None:
       return None
 
-    quat = quatFromRotationMatrix(T[0:3, 0:3])
+    quat = orpy.quatFromRotationMatrix(T[0:3, 0:3])
     p = T[0:3, 3]
     return SE3Config(quat, p)        
 
@@ -168,7 +174,7 @@ class CCTree(object):
     self.length = 0
     if v_root is not None:
       self.vertices.append(v_root)
-      self.length += 1
+      self.length = 1
 
     self.treetype = treetype
 
@@ -376,8 +382,8 @@ class CCQuery(object):
     When user specifies different velocity_scale or step_size, these value 
     are scaled accordingly to satisfy the abovementioned criteria.
 
-    @type  obj_translation_limits: CCVertex
-    @param obj_translation_limits: Root vertex to start growing the tree from.
+    @type  obj_translation_limits: list
+    @param obj_translation_limits: Cartesian workspace limits of the object
     @type          q_robots_start: list
     @param         q_robots_start: Start configurations of the two robots.
     @type           q_robots_goal: list
@@ -479,7 +485,7 @@ class CCQuery(object):
     motion in SO(3) space. 
     """
     if not self.solved:
-      raise CCPlannerException('Query not solved.')
+      log.warn('Query not solved.')
       return
 
     # Generate rot_traj_list
@@ -502,7 +508,7 @@ class CCQuery(object):
     object's translational motion.
     """
     if (not self.solved):
-      raise CCPlannerException('Query not solved.')
+      log.warn('Query not solved.')
       return
 
     # Generate translation_traj_list
@@ -520,7 +526,7 @@ class CCQuery(object):
     query (if solved) and store it in {self.bimanual_wpts}. 
     """
     if (not self.solved):
-      raise CCPlannerException('Query not solved.')
+      log.warn('Query not solved.')
       return
 
     bimanual_wpts_list = self.tree_start.generate_bimanual_wpts_list()  
@@ -542,7 +548,7 @@ class CCQuery(object):
     C{self.bimanual_wpts} for both robots' motion.
     """
     if (not self.solved):
-      raise CCPlannerException('Query not solved.')
+      log.warn('Query not solved.')
       return
 
     timestamps_list = self.tree_start.generate_timestamps_list()
@@ -558,7 +564,7 @@ class CCQuery(object):
     (if solved) and store it in {self.cctraj}. It combines all the components required for a closed-chain motion.
     """
     if (not self.solved):
-      raise CCPlannerException('Query not solved.')
+      log.warn('Query not solved.')
       return
 
     # Generate CCTrajectory components
@@ -618,9 +624,9 @@ class CCPlanner(object):
     @return: A random SE3 Configuration.
     """ 
     q_rand = lie.RandomQuat()
-    p_rand = np.asarray([RNG.uniform(self._query.lower_limits[i], 
-                     self._query.upper_limits[i]) 
-               for i in xrange(3)])
+    p_rand = np.asarray([_RNG.uniform(self._query.lower_limits[i], 
+                                      self._query.upper_limits[i]) 
+                         for i in xrange(3)])
     
     qd_rand = np.zeros(3)
     pd_rand = np.zeros(3)
@@ -841,8 +847,8 @@ class CCPlanner(object):
         continue
       
       # Interpolate a SE3 trajectory for the object
-      R_beg = rotationMatrixFromQuat(q_beg)
-      R_end = rotationMatrixFromQuat(q_end)
+      R_beg = orpy.rotationMatrixFromQuat(q_beg)
+      R_end = orpy.rotationMatrixFromQuat(q_end)
       rot_traj = lie.InterpolateSO3(R_beg, R_end, qd_beg, qd_end,
                                     self._query.interpolation_duration)
       translation_traj_str = utils.traj_str_3rd_degree(p_beg, p_end, pd_beg, pd_end, self._query.interpolation_duration)
@@ -949,8 +955,8 @@ class CCPlanner(object):
         continue
 
       # Interpolate a SE3 trajectory for the object
-      R_beg = rotationMatrixFromQuat(q_beg)
-      R_end = rotationMatrixFromQuat(q_end)
+      R_beg = orpy.rotationMatrixFromQuat(q_beg)
+      R_end = orpy.rotationMatrixFromQuat(q_end)
       rot_traj = lie.InterpolateSO3(R_beg, R_end, qd_beg, qd_end,
                                     self._query.interpolation_duration)
       translation_traj_str = utils.traj_str_3rd_degree(p_beg, p_end, pd_beg, pd_end, self._query.interpolation_duration)
@@ -1040,10 +1046,10 @@ class CCPlanner(object):
       pd_end = v_near.config.SE3_config.pd
       
       # Interpolate the object trajectory
-      R_beg = rotationMatrixFromQuat(q_beg)
-      R_end = rotationMatrixFromQuat(q_end)
+      R_beg = orpy.rotationMatrixFromQuat(q_beg)
+      R_end = orpy.rotationMatrixFromQuat(q_end)
       rot_traj = lie.InterpolateSO3(R_beg,
-                     rotationMatrixFromQuat(q_end),
+                     orpy.rotationMatrixFromQuat(q_end),
                      qd_beg, qd_end, 
                      self._query.interpolation_duration)
       translation_traj_str = utils.traj_str_3rd_degree(p_beg, p_end, pd_beg, pd_end, self._query.interpolation_duration)
@@ -1122,10 +1128,10 @@ class CCPlanner(object):
       pd_beg = v_near.config.SE3_config.pd
       
       # Interpolate the object trajectory
-      R_beg = rotationMatrixFromQuat(q_beg)
-      R_end = rotationMatrixFromQuat(q_end)
+      R_beg = orpy.rotationMatrixFromQuat(q_beg)
+      R_end = orpy.rotationMatrixFromQuat(q_end)
       rot_traj = lie.InterpolateSO3(R_beg,
-                     rotationMatrixFromQuat(q_end),
+                     orpy.rotationMatrixFromQuat(q_end),
                      qd_beg, qd_end, 
                      self._query.interpolation_duration)
       translation_traj_str = utils.traj_str_3rd_degree(p_beg, p_end, pd_beg, pd_end, self._query.interpolation_duration)
@@ -1406,8 +1412,8 @@ class CCPlanner(object):
 
       # Sample two time instants
       timestamps_indices = range(len(timestamps))
-      t0_index = RNG.choice(timestamps_indices[:-min_n_timesteps])
-      t1_index = RNG.choice(timestamps_indices[t0_index + min_n_timesteps:])
+      t0_index = _RNG.choice(timestamps_indices[:-min_n_timesteps])
+      t1_index = _RNG.choice(timestamps_indices[t0_index + min_n_timesteps:])
       t0 = timestamps[t0_index]
       t1 = timestamps[t1_index]
 
@@ -1807,7 +1813,7 @@ class BimanualObjectTracker(object):
     """
     R = T[0:3, 0:3]
     p = T[0:3, 3]
-    target_pose = np.hstack([quatFromRotationMatrix(R), p])
+    target_pose = np.hstack([orpy.quatFromRotationMatrix(R), p])
     if target_pose[0] < 0:
       target_pose[0:4] *= -1.
 

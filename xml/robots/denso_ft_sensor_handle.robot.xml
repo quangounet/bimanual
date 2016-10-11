@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Robot name="denso_ft_sensor_handle">
+  
+  <!-- Denso -->
+  <Robot file="denso_ft_sensor.robot.xml"></Robot>
+  
+  <!-- Handle -->
+  <Kinbody>
+    <body name="ft_sensor_handle" type="dynamic">
+      <Geom type="trimesh" modifiable="false">
+        <diffuseColor>0.2 0.2 0.2</diffuseColor>
+        <data>meshes/ati_gamma/handle.stl 1.0</data>
+        <render>meshes/ati_gamma/handle.stl 1.0</render>
+        <!-- Align the mesh -->
+        <translation>0 0 -0.072</translation>
+      </Geom>
+      <!-- Set the local frame -->
+      <offsetfrom>ati_ft_sensor</offsetfrom>
+      <translation>0 0 0.072</translation>
+    </body>
+    <joint name="joint_handle" type="hinge" enable="false">
+      <body>ati_ft_sensor</body>
+      <body>ft_sensor_handle</body>
+      <limits>0 0</limits>
+    </joint>
+  </Kinbody>
+
+  <!-- Define the manipulator -->
+  <Manipulator name="denso_ft_sensor_handle">
+    <base>link0</base>
+    <effector>ft_sensor_handle</effector>
+    <translation>0 0 0</translation>
+  </Manipulator>
+  
+</Robot>

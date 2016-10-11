@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Table offset from the markers -0.013 Z -->
+<Kinbody name="table">
+  <Body type="static">
+    <Geom type="box">
+      <extents>0.42 0.52 0.055</extents>
+      <translation>0 0 -0.068</translation>
+      <diffusecolor>0.8 0.8 0.86</diffusecolor>
+    </Geom>
+    <Geom type="box">
+      <extents>0.15 0.02 0.308</extents>
+      <translation>0.19 0.48 -0.431</translation>
+      <diffusecolor>0.7 0.6 0.4</diffusecolor>
+    </Geom>
+    <Geom type="box">
+      <extents>0.15 0.02 0.308</extents>
+      <translation>0.19 -0.48 -0.431</translation>
+      <diffusecolor>0.7 0.6 0.4</diffusecolor>
+    </Geom>
+  </Body>
+</Kinbody>

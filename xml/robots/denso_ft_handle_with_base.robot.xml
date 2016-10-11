@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Robot name="denso_with_base">
+  <!-- Include the robot base -->
+  <Kinbody file="../objects/denso_base.kinbody.xml"></Kinbody>
+  <!-- Include the robot -->
+  <Robot file="../robots/denso_ft_sensor_handle.robot.xml" />
+  <!-- Attach the robot to the base -->
+  <Kinbody>
+    <body name="top_plate"></body>
+    <adjacent>link0 top_plate</adjacent>
+    <joint name="joint_denso_base" type="hinge" enable="false">
+      <body>link0</body>
+      <body>top_plate</body>
+      <limits>0 0</limits>
+    </joint>
+  </Kinbody>
+</Robot>

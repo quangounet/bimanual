@@ -1,2 +1,1 @@
-# bimanual
-Bimanual manipulation
+Stand-alone closed-chain motion planner for bimanual set-up.

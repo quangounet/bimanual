@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Robot name="denso_ft_sensor_gripper">
+  
+  <!-- Denso -->
+  <Robot file="denso_ft_sensor.robot.xml"></Robot>
+
+  <!-- Upper Interface Plate -->
+  <Kinbody>
+    <body name="gamma_upperplate" type="dynamic">
+      <Geom type="trimesh" modifiable="false">
+        <diffuseColor>0.2 0.2 0.2</diffuseColor>
+        <data>meshes/ati_gamma/gamma_robotiq.stl 1.0</data>
+        <render>meshes/ati_gamma/gamma_robotiq.stl 1.0</render>
+        <!-- Align the mesh -->
+        <translation>0 0 -0.015</translation>
+      </Geom>
+      <!-- Set the local frame -->
+      <offsetfrom>ati_ft_sensor</offsetfrom>
+      <translation>0 0 0.015</translation>
+    </body>
+    <joint name="joint_gamma_upperplate" type="hinge" enable="false">
+      <body>ati_ft_sensor</body>
+      <body>gamma_upperplate</body>
+      <limitsdeg>0 0</limitsdeg>
+    </joint>
+  </Kinbody>
+
+  <!-- Gripper + Coupler -->
+  <Kinbody file="robotiq_85_gripper.kinbody.xml">
+  </Kinbody>
+  <!-- Attach the gripper to the robot -->
+  <Kinbody>
+    <body name="robotiq_coupler">
+      <offsetfrom>gamma_upperplate</offsetfrom>
+    </body>
+    <joint name="joint_gamma_robotiq" type="hinge" enable="false">
+      <body>gamma_upperplate</body>
+      <body>robotiq_coupler</body>
+      <limitsdeg>0 0</limitsdeg>
+    </joint>
+  </Kinbody>
+
+  <!-- Define the manipulators -->
+  <Manipulator name="denso_ft_sensor_gripper">
+    <base>link0</base>
+    <effector>robotiq_tool_tip</effector>
+    <translation>0 0 0.05</translation>
+    <joints>robotiq_joint_l1</joints>
+    <closingdirection>1 1 1 0</closingdirection>
+    <direction>0 0 1</direction>
+  </Manipulator>
+  
+</Robot>

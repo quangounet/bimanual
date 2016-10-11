@@ -1,0 +1,10 @@
+<Kinbody name="floor">
+  <body type="dynamic">
+    <geom type="box">
+      <extents>1.000 1.000 0.05</extents>
+      <translation>0 0 -0.050001</translation>
+      <diffusecolor>0.55294118 0.77647059 0.24705882</diffusecolor>
+      <ambientcolor>0.8 0.8 0.8</ambientcolor>
+    </geom>
+  </body>
+</Kinbody>

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<Kinbody name="back">
+<Kinbody name="ikea_back">
   <body type="dynamic" name="mesh">
     <Geom type="trimesh" modifiable="false">
       <diffusecolor>0.263 0.184 0.129</diffusecolor>

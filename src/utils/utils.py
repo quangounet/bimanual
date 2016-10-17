@@ -7,19 +7,16 @@ from pylab import *
 
 from TOPP import Trajectory
 from TOPP import Utilities
+from time import sleep
 
 import string
 import numpy as np
 import lie
 
-import logging
-logging.basicConfig(format='[%(levelname)s] [%(name)s: %(funcName)s] %(message)s', level=logging.DEBUG)
-log = logging.getLogger(__name__)
-
 INF = np.inf
 EPS = 1e-12
 
-############################## Trajectory related ##############################
+############################ Trajectory related ############################
 def poly_critical_points(p, interval=None):
   """
   Return the critical points of the given polynomial.
@@ -50,7 +47,8 @@ def poly_critical_points(p, interval=None):
 def traj_str_3rd_degree(q_beg, q_end, qd_beg, qd_end, duration):
   """
   Return an interpolated 3rd degree polynomial trajectory string.
-  It is up to 10 decimal places accuracy to guarantee continuity at trajectory end.
+  It is up to 10 decimal places accuracy to guarantee continuity 
+  at trajectory end.
 
   @type     q_beg: list
   @param    q_beg: Initial configuration.
@@ -70,14 +68,17 @@ def traj_str_3rd_degree(q_beg, q_end, qd_beg, qd_end, duration):
   ndof = len(q_beg)
   traj_str += "%f\n%d"%(duration, ndof)
   for k in range(ndof):
-    a, b, c, d = Utilities.Interpolate3rdDegree(q_beg[k], q_end[k], qd_beg[k], qd_end[k], duration)
+    a, b, c, d = Utilities.Interpolate3rdDegree(
+                   q_beg[k], q_end[k], qd_beg[k], qd_end[k], duration)
     traj_str += "\n%.10f %.10f %.10f %.10f"%(d, c, b, a)
   return traj_str
 
-def traj_str_5th_degree(q_beg, q_end, qd_beg, qd_end, qdd_beg, qdd_end, duration):
+def traj_str_5th_degree(q_beg, q_end, qd_beg, qd_end,
+                        qdd_beg, qdd_end, duration):
   """
   Return an interpolated 5th degree polynomial trajectory string.
-  It is up to 10 decimal places accuracy to guarantee continuity at trajectory end.
+  It is up to 10 decimal places accuracy to guarantee continuity 
+  at trajectory end.
 
   @type     q_beg: list
   @param    q_beg: Initial configuration.
@@ -101,7 +102,9 @@ def traj_str_5th_degree(q_beg, q_end, qd_beg, qd_end, qdd_beg, qdd_end, duration
   ndof = len(q_beg)
   traj_str += "%f\n%d"%(duration, ndof)
   for k in range(ndof):
-    a, b, c, d, e, f = Utilities.Interpolate5thDegree(q_beg[k], q_end[k], qd_beg[k], qd_end[k], qdd_beg[k], qdd_end[k], duration)
+    a, b, c, d, e, f = Utilities.Interpolate5thDegree(
+                         q_beg[k], q_end[k], qd_beg[k], 
+                         qd_end[k], qdd_beg[k], qdd_end[k], duration)
     traj_str += "\n%.10f %.10f %.10f %.10f %.10f %.10f"%(f, e, d, c, b, a)
   return traj_str
 
@@ -152,7 +155,7 @@ def check_traj_str_DOF_limits(robot, traj_str):
   
     # check DOF values
     for x in q_cri_points:
-      if (x < lower_limits[i]) or (x > upper_limits[i]):
+      if (q(x) < lower_limits[i]) or (q(x) > upper_limits[i]):
         return False
     
     # check DOF velocities
@@ -195,7 +198,8 @@ def check_translation_traj_str_limits(upper_limits, lower_limits, traj_str):
  
 def traj_str_from_traj_list(traj_list):
   """
-  Return a single trajectory string by combining all trajectories in the given list.
+  Return a single trajectory string by combining all trajectories in 
+  the given list.
 
   @type  traj_list: list of TOPP.Trajectory.PiecewisePolynomialTrajectory
   @param traj_list: A list containing all trajectories.
@@ -242,7 +246,8 @@ def replace_traj_segment(original_traj, traj_segment, t0, t1):
       new_chunk_list.append(c)
 
   ## remainderchunk0
-  rem_chunk0 = Trajectory.Chunk(rem0, original_traj.chunkslist[i0].polynomialsvector)
+  rem_chunk0 = Trajectory.Chunk(
+                 rem0, original_traj.chunkslist[i0].polynomialsvector)
   new_chunk_list.append(rem_chunk0)
 
   ## insert traj_segment
@@ -278,7 +283,8 @@ def replace_traj_segment(original_traj, traj_segment, t0, t1):
 
 def replace_lie_traj_segment(original_lie_traj, lie_traj_segment, t0, t1):
   """
-  Replace the lie trajectory segment in time interval (C{t0}, C{t1}) in {original_lie_traj} with the given C{lie_traj_segment}.
+  Replace the lie trajectory segment in time interval (C{t0}, C{t1}) 
+  in {original_lie_traj} with the given C{lie_traj_segment}.
 
   @type  original_traj: lie.LieTraj
   @param original_traj: Original lie trajectory.
@@ -314,7 +320,8 @@ def replace_lie_traj_segment(original_lie_traj, lie_traj_segment, t0, t1):
     for c in original_lie_traj.trajlist[i0].chunkslist[0: ic0]:
       new_chunk_list.append(c)
       # remainderchunk0
-  rem_chunk0 = Trajectory.Chunk(remc0, original_lie_traj.trajlist[i0].chunkslist[ic0].polynomialsvector)
+  rem_chunk0 = Trajectory.Chunk(remc0, original_lie_traj.trajlist[i0].\
+                                chunkslist[ic0].polynomialsvector)
   new_chunk_list.append(rem_chunk0)
 
   rem_traj0 = Trajectory.PiecewisePolynomialTrajectory(new_chunk_list) 
@@ -352,7 +359,8 @@ def replace_lie_traj_segment(original_lie_traj, lie_traj_segment, t0, t1):
 
   ## insert remaining chunk 
   if ic1 < len(original_lie_traj.trajlist[i1].chunkslist) - 1:
-    for c in original_lie_traj.trajlist[i1].chunkslist[ic1 + 1: len(original_lie_traj.trajlist[i1].chunkslist)]:
+    for c in original_lie_traj.trajlist[i1].chunkslist[ic1 + 1: \
+            len(original_lie_traj.trajlist[i1].chunkslist)]:
         new_chunk_list.append(c)
   ## insert 
   rem_traj1 = Trajectory.PiecewisePolynomialTrajectory(new_chunk_list)
@@ -362,7 +370,8 @@ def replace_lie_traj_segment(original_lie_traj, lie_traj_segment, t0, t1):
   # insert the remainder trajectoris
   if i1 < len(original_lie_traj.trajlist)-1:
     R_index = i1+1
-    for t in original_lie_traj.trajlist[i1+1: len(original_lie_traj.trajlist)]:
+    for t in original_lie_traj.trajlist[i1+1: \
+              len(original_lie_traj.trajlist)]:
       new_traj_list.append(t)
       new_R_list.append(original_lie_traj.Rlist[R_index])
       R_index += 1
@@ -370,7 +379,7 @@ def replace_lie_traj_segment(original_lie_traj, lie_traj_segment, t0, t1):
   return lie.LieTraj(new_R_list, new_traj_list)
 
 
-############################## Distance computation ##############################
+########################### Distance computation ###########################
 
 def SO3_distance(R0, R1):
   """
@@ -428,7 +437,8 @@ def SE3_distance(T0, T1, c=None, d=None):
 
 def distance(q1, q2, metrictype=1):
   """
-  Return distance between the given two robot configurations (joint values) according to the specified distance metric.
+  Return distance between the given two robot configurations (joint values)
+  according to the specified distance metric.
 
   @type  q1: numpy.ndarray
   @param q1: Robot joint configuration.
@@ -455,17 +465,20 @@ def distance(q1, q2, metrictype=1):
 
 def generate_accumulated_dist_list(traj, metrictype=1, discr_timestep=0.005):
   """
-  Return a list of accumulated robot config distances at each timestamp of the given trajectory.
+  Return a list of accumulated robot config distances at each timestamp of 
+  the given trajectory.
 
   @type            traj: TOPP.Trajectory.PiecewisePolynomialTrajectory
   @param           traj: Trajectory to be discretized.
   @type      metrictype: int
-  @param     metrictype: Metric type used for computing distance. Possible values:
+  @param     metrictype: Metric type used for computing distance. 
+                         Possible values:
                          -  0 : L2 norm squared
                          -  1 : L2 norm
                          -  2 : L1 norm
   @type  discr_timestep: float
-  @param discr_timestep: Time resolution for generating accumulated distance list.
+  @param discr_timestep: Time resolution for generating accumulated 
+                         distance list.
 
   @rtype:  list
   @return: A list of accumulated distance at each timestamp.
@@ -485,11 +498,11 @@ def generate_accumulated_dist_list(traj, metrictype=1, discr_timestep=0.005):
 
 def compute_accumulated_SE3_distance(lie_traj, translation_traj, t0=None, t1=None, discr_timestep=0.005):
   """
-  Return accumulated SE3 distance between configurations at C{t0} and C{t1} in the
-  given trajectory.
-  This approach is much faster than using C{generate_accumulated_SE3_dist_list()}
+  Return accumulated SE3 distance between configurations at C{t0} and C{t1} 
+  in the given trajectory.
+  This approach is much faster than using 
+  C{generate_accumulated_SE3_dist_list()}
   when comparing accumulated distance between trajectories.
-
 
   @type          lie_traj: lie.LieTraj
   @param         lie_traj: Lie trajectory to be discretized.
@@ -514,7 +527,8 @@ def compute_accumulated_SE3_distance(lie_traj, translation_traj, t0=None, t1=Non
     raise Exception('Incorrect time stamp.')
 
   accumulated_dist = 0
-  timestamps = np.append(np.arange(t0 + discr_timestep, t1, discr_timestep), t1)
+  timestamps = np.append(np.arange(t0 + discr_timestep, 
+                                   t1, discr_timestep), t1)
 
   Tprev = np.eye(4)
   Tcur = np.eye(4)
@@ -531,9 +545,12 @@ def compute_accumulated_SE3_distance(lie_traj, translation_traj, t0=None, t1=Non
 
   return accumulated_dist
 
-def generate_accumulated_SE3_dist_list(lie_traj, translation_traj, discr_timestep, discr_compute_timestep):
+def generate_accumulated_SE3_dist_list(lie_traj, translation_traj, 
+                                       discr_timestep, 
+                                       discr_compute_timestep):
   """
-  Return a list of accumulated SE3 distances at each timestamp of the given trajectory.
+  Return a list of accumulated SE3 distances at each timestamp of the 
+  given trajectory.
   The trajectory is to be sliced into M{n} segments.
 
   @type                lie_traj: lie.LieTraj
@@ -544,10 +561,11 @@ def generate_accumulated_SE3_dist_list(lie_traj, translation_traj, discr_timeste
   @param         discr_timestep: Time resolution for generating accumulated
                                  distance list.
   @type  discr_compute_timestep: float
-  @param discr_compute_timestep: Real time resolition used to compute distance; 
-                                 each contains a cycle of discr_timestep. All
-                                 timesteps within one cycle will share the same
-                                 accumulated distance value to ensure speed.
+  @param discr_compute_timestep: Real time resolition used to compute 
+                                 distance; each contains a cycle of 
+                                 discr_timestep. All timesteps within one 
+                                 cycle will share the same accumulated 
+                                 distance value to ensure speed.
 
   @rtype:  list, length = M{n+1}
   @return: A list of accumulated distance at each timestamp.
@@ -558,7 +576,8 @@ def generate_accumulated_SE3_dist_list(lie_traj, translation_traj, discr_timeste
   Tprev[0:3, 0:3] = lie_traj.EvalRotation(0)
   Tprev[0:3, 3] = translation_traj.Eval(0)
     
-  timestamps = np.arange(discr_compute_timestep, lie_traj.duration, discr_compute_timestep)
+  timestamps = np.arange(discr_compute_timestep, lie_traj.duration, 
+                         discr_compute_timestep)
   if not np.isclose(timestamps[-1], lie_traj.duration):
     np.append(timestamps, lie_traj.duration)
 
@@ -581,7 +600,8 @@ def generate_accumulated_SE3_dist_list(lie_traj, translation_traj, discr_timeste
 
 def _is_close_axis(axis, target_axis):
   """    
-  Check wether the two given axis (extracted from their respective quaternion) belong to the same class.
+  Check wether the two given axis (extracted from their respective 
+  quaternion) belong to the same class.
 
   @type         axis: list
   @param        axis: Axis vector.
@@ -596,13 +616,15 @@ def _is_close_axis(axis, target_axis):
     return True
   return False
 
-########################### Trajtectory manipulation ###########################
+######################## Trajtectory manipulation ########################
 def merge_timestamps_list(timestamps_list):
   """
-  Return a list of timestamps by merging all lists of timestamps in the given list.
+  Return a list of timestamps by merging all lists of timestamps in the 
+  given list.
 
   @type  timestamps_list: list
-  @param timestamps_list: list containing all lists of timestamps to be merged.
+  @param timestamps_list: list containing all lists of timestamps to 
+  be merged.
 
   @rtype:  list
   @return: A list of merged timstamps.
@@ -621,10 +643,10 @@ def merge_timestamps_list(timestamps_list):
     new_timestamps = new_timestamps + newT
   return new_timestamps
 
-
 def merge_wpts_list(wpts_list, eps=1e-3):
   """
-  Return a list of waypoints by merging all lists of waypoints in the given list.
+  Return a list of waypoints by merging all lists of waypoints in the 
+  given list.
 
   @type  wpts_list: list
   @param wpts_list: list containing all lists of waypoints to be merged.
@@ -652,7 +674,8 @@ def merge_wpts_list(wpts_list, eps=1e-3):
 
 def discretize_wpts(q_init, q_final, step_count):
   """
-  Return a list of waypoints interpolated start and end waypoints(configurations), discretized according to C{step_count}.
+  Return a list of waypoints interpolated start and end waypoints
+  (configurations), discretized according to C{step_count}.
 
   @type      q_init: numpy.ndarray
   @param     q_init: Start configuration.
@@ -669,13 +692,14 @@ def discretize_wpts(q_init, q_final, step_count):
   q_delta = (q_final - q_init) / step_count
   wpts = []
   for i in xrange(step_count):
-    wpts.append(q_init + q_delta*(i + 1))
+    wpts.append(q_init + q_delta*(i+1))
   return wpts
 
-############################## Manipulator related ##############################
+########################### Manipulator related ###########################
 def compute_endeffector_transform(manip, q):
   """
-  Return the end-effector transform of the manipulator at given the configuration.
+  Return the end-effector transform of the manipulator at given 
+  the configuration.
 
   @type  manip: openravepy.Manipulator
   @param manip: Manipulator to be used.
@@ -691,47 +715,12 @@ def compute_endeffector_transform(manip, q):
     T = manip.GetEndEffectorTransform()
   return T
 
-def disable_gripper(robots):
+def compute_bimanual_goal_configs(robots, obj, q_robots_cur, q_robots_grasp, 
+                                  T_obj_cur, T_obj_goal, seeds=[None, None], 
+                                  reset=True):
   """
-  Set active DOFs of all robots in the given list to match their active manipulator.
-
-  @type  robots: list of openravepy.Robot
-  @param robots: A list of robots to be configured.
-  """
-  for robot in robots:
-    manip = robot.GetActiveManipulator()
-    robot.SetActiveDOFs(manip.GetArmIndices())
-
-def load_IK_model(robots):
-  """
-  Load openrave IKFast model for all robots in the given list.
-
-  @type  robots: list of openravepy.Robot
-  @param robots: A list of robots to be loaded.
-  """
-  for robot in robots:    
-    ikmodel = orpy.databases.inversekinematics.InverseKinematicsModel(robot, iktype=orpy.IkParameterization.Type.Transform6D)    
-    if (not ikmodel.load()):
-      log.info('Robot:[{0}] IKFast not found. Generating IKFast solution...'.format(robot.GetName()))
-      ikmodel.autogenerate()
-
-def scale_DOF_limits(robot, v=1, a=1):
-  """
-  Adjust DOF limits of the given robot by the specified scale.
-
-  @type  robot: openravepy.Robot
-  @param robot: Robot to be configured.
-  @type  v: float
-  @param v: Velocity scale.
-  @type  a: float
-  @param a: Acceleration scale.
-  """
-  robot.SetDOFVelocityLimits(robot.GetDOFVelocityLimits() * v)
-  robot.SetDOFAccelerationLimits(robot.GetDOFAccelerationLimits() * a)
-
-def compute_bimanual_goal_configs(robots, obj, q_robots_cur, q_robots_grasp, T_obj_cur, T_obj_goal):
-  """
-  Return closest IK solution of the given robot grasping the given object, when the object moves to a new transformation.
+  Return one set of IK solutions of the given robot grasping the 
+  given object, when the object moves to a new transformation.
 
   @type          robots: list of openravepy.Robot
   @param         robots: A list of robots to be used.
@@ -745,48 +734,70 @@ def compute_bimanual_goal_configs(robots, obj, q_robots_cur, q_robots_grasp, T_o
   @param      T_obj_cur: Current transformation of the obj.
   @type      T_obj_goal: numpy.ndarray
   @param     T_obj_goal: Goal transformation of the obj.
+  @type           seeds: list
+  @param          seeds: Index to speficy which IK solution to return, if not
+                         set, return the closest ones.
+  @type           reset: bool
+  @param          reset: Whether to restore all robots and objects to their
+                         original pose after computation.
 
   @rtype:  list
   @return: Goal configurations of the robots.
   """
   def restore():
     obj.Enable(True)
-    obj.SetTransform(T_obj_cur)
-    for (robot, q_robot_cur, q_robot_grasp) in zip(robots, q_robots_cur, q_robots_grasp):
+    if reset: obj.SetTransform(T_obj_cur)
+    for (robot, q_robot_cur, q_robot_grasp) in zip(robots, q_robots_cur,
+                                                   q_robots_grasp):
       robot.Enable(True)
-      robot.SetDOFValues(np.append(q_robot_cur, q_robot_grasp))
+      if reset: robot.SetDOFValues(np.append(q_robot_cur, q_robot_grasp))
 
   obj.Enable(False)
   for robot in robots:
     robot.Enable(False)
 
   q_robots_new = []
-  for (robot, q_robot_cur, q_robot_grasp) in zip(robots, q_robots_cur, q_robots_grasp):
+  for (robot, q_robot_cur, q_robot_grasp, seed) in zip(robots, q_robots_cur,
+                                                       q_robots_grasp, seeds):
     robot.Enable(True)
     robot.SetActiveDOFValues(q_robot_cur)
     manip = robot.GetActiveManipulator()
     T_ef_cur = compute_endeffector_transform(manip, q_robot_cur)
     T_ef_new = np.dot(T_obj_goal, np.dot(np.linalg.inv(T_obj_cur), T_ef_cur))
-    q_robot_new = manip.FindIKSolution(T_ef_new, orpy.IkFilterOptions.CheckEnvCollisions)
+    if seed is None:
+      q_robot_new = manip.FindIKSolution(
+        T_ef_new, orpy.IkFilterOptions.CheckEnvCollisions)
+    else:
+      q_robot_new = manip.FindIKSolutions(
+        T_ef_new, orpy.IkFilterOptions.CheckEnvCollisions)[seed]
     if q_robot_new is None:
       restore()
-      log.info('{0} : No IK solution exists.'.format(robot.GetName()))
+      print robot.GetName() + ': No IK solution exists.'
       return None
     q_robots_new.append(q_robot_new)
-    robot.SetDOFValues(np.append(q_robot_new, q_robot_grasp * 0.9))
+    robot.SetDOFValues(np.append(q_robot_new, q_robot_grasp * 0.7))
 
   obj.SetTransform(T_obj_goal)
   obj.Enable(True)
   if obj.GetEnv().CheckCollision(obj):
     restore()
-    log.info('Object in collision.')
+    print 'Object in collision.'
     return None
 
   restore()
   return q_robots_new
   
+########################### Visualization ###########################
+def visualize_config_transition(robot, q_start, q_goal, step_num=50, 
+                                timestep=0.05):
+  q_start = np.array(q_start)
+  q_goal = np.array(q_goal)
+  delta = (q_goal - q_start)/step_num
+  for i in xrange(step_num):
+    robot.SetActiveDOFValues(q_start + delta * i)
+    sleep(timestep)
 
-############################## Output formatting ##############################
+########################### Output formatting ###########################
 colors = dict()
 colors['black'] = 0
 colors['red'] = 1
@@ -798,7 +809,8 @@ colors['cyan'] = 6
 colors['white'] = 7
 def colorize(string, color='white', bold=True):
   """
-  Return a string by formatting the given one with specified color and boldness.
+  Return a string by formatting the given one with specified color and 
+  boldness.
 
   @type  string: str
   @param string: String to be formatted.

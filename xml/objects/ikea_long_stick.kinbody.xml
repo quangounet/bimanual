@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Kinbody name="ikea_long_stick">
+
+  <body type="dynamic">
+    <Geom type="box">
+      <Extents>0.01 0.17 0.025</Extents>
+      <diffusecolor>0.263 0.184 0.129</diffusecolor>
+    </Geom>
+  </body>
+</Kinbody>

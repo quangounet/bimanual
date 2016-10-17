@@ -4,8 +4,8 @@
   <body name="robotiq_coupler" type="dynamic">
     <Geom type="trimesh" modifiable="false">
       <diffuseColor>0.2 0.2 0.2</diffuseColor>
-      <data>meshes/robotiq_85_gripper/coupler.vrml 0.001</data>
-      <render>meshes/robotiq_85_gripper/coupler.vrml 0.001</render>
+      <data>meshes/robotiq_85_gripper/coupler.wrl 0.001</data>
+      <render>meshes/robotiq_85_gripper/coupler.wrl 0.001</render>
       <translation>0 0 0.004</translation>
       <rotationmat>-1 0 0 0 -1 0 0 0 1</rotationmat>
     </Geom>
@@ -17,11 +17,12 @@
   <!-- Hand robotiq_base -->
   <body name="robotiq_base" type="dynamic">
     <offsetfrom>robotiq_coupler</offsetfrom>
+    <translation>0 0 0.0081</translation>
     <Geom type="trimesh" modifiable="false">
       <diffuseColor>0.2 0.2 0.2</diffuseColor>
-      <data>meshes/robotiq_85_gripper/g0.vrml 0.001</data>
-      <render>meshes/robotiq_85_gripper/g0.vrml 0.001</render>
-      <translation>0 0 0.098</translation>
+      <data>meshes/robotiq_85_gripper/g0.wrl 0.001</data>
+      <render>meshes/robotiq_85_gripper/g0.wrl 0.001</render>
+      <translation>0 0 0.0899</translation>
     </Geom>
     <mass type="custom">
       <total>0.850</total>
@@ -35,8 +36,8 @@
     <translation>0 -0.0127 0.06142</translation>
     <Geom type="trimesh" modifiable="false">
       <diffuseColor>0.2 0.2 0.2</diffuseColor>
-      <data>meshes/robotiq_85_gripper/g1.vrml 0.001</data>
-      <render>meshes/robotiq_85_gripper/g1.vrml 0.001</render>
+      <data>meshes/robotiq_85_gripper/g1.wrl 0.001</data>
+      <render>meshes/robotiq_85_gripper/g1.wrl 0.001</render>
       <translation>0 0.0127 0.02858</translation>
     </Geom>
     <mass type="custom">
@@ -50,8 +51,8 @@
     <translation>0 0.0127 0.06142</translation>
     <Geom type="trimesh" modifiable="false">
       <diffuseColor>0.2 0.2 0.2</diffuseColor>
-      <data>meshes/robotiq_85_gripper/g2.vrml 0.001</data>
-      <render>meshes/robotiq_85_gripper/g2.vrml 0.001</render>
+      <data>meshes/robotiq_85_gripper/g2.wrl 0.001</data>
+      <render>meshes/robotiq_85_gripper/g2.wrl 0.001</render>
       <translation>0 -0.0127 0.02858</translation>
     </Geom>
     <mass type="custom">
@@ -62,12 +63,11 @@
   <!-- Link4 Left -->
   <body name="robotiq_link_l4" type="dynamic">
     <offsetfrom>robotiq_base</offsetfrom>
-    <!-- <translation>-0.0498 0 0.0148</translation> -->
     <translation>0 -0.0498 0.1048</translation>
     <Geom type="trimesh" modifiable="false">
       <diffuseColor>0.2 0.2 0.2</diffuseColor>
-      <data>meshes/robotiq_85_gripper/g3.vrml 0.001</data>
-      <render>meshes/robotiq_85_gripper/g3.vrml 0.001</render>
+      <data>meshes/robotiq_85_gripper/g3.wrl 0.001</data>
+      <render>meshes/robotiq_85_gripper/g3.wrl 0.001</render>
       <translation>0 0.0498 -0.0148</translation>
     </Geom>
     <mass type="custom">
@@ -78,12 +78,11 @@
   <!-- Link4 Right -->
   <body name="robotiq_link_r4" type="dynamic">
     <offsetfrom>robotiq_base</offsetfrom>
-    <!-- <translation>0.0498 0 0.0148</translation> -->
     <translation>0 0.0498 0.1048</translation>
     <Geom type="trimesh" modifiable="false">
       <diffuseColor>0.2 0.2 0.2</diffuseColor>
-      <data>meshes/robotiq_85_gripper/g4.vrml 0.001</data>
-      <render>meshes/robotiq_85_gripper/g4.vrml 0.001</render>
+      <data>meshes/robotiq_85_gripper/g4.wrl 0.001</data>
+      <render>meshes/robotiq_85_gripper/g4.wrl 0.001</render>
       <translation>0 -0.0498 -0.0148</translation>
     </Geom>
     <mass type="custom">
@@ -127,8 +126,8 @@
     <translation>0 -0.03058 0.055</translation>
     <Geom type="trimesh" modifiable="false">
       <diffuseColor>0.2 0.2 0.2</diffuseColor>
-      <data>meshes/robotiq_85_gripper/g8.vrml 0.001</data>
-      <render>meshes/robotiq_85_gripper/g8.vrml 0.001</render>
+      <data>meshes/robotiq_85_gripper/g8.wrl 0.001</data>
+      <render>meshes/robotiq_85_gripper/g8.wrl 0.001</render>
       <translation>0 0.03058 0.035</translation>
     </Geom>
     <mass type="custom">
@@ -142,8 +141,8 @@
     <translation>0 0.03058 0.055</translation>
     <Geom type="trimesh" modifiable="false">
       <diffuseColor>0.2 0.2 0.2</diffuseColor>
-      <data>meshes/robotiq_85_gripper/g7.vrml 0.001</data>
-      <render>meshes/robotiq_85_gripper/g7.vrml 0.001</render>
+      <data>meshes/robotiq_85_gripper/g7.wrl 0.001</data>
+      <render>meshes/robotiq_85_gripper/g7.wrl 0.001</render>
       <translation>0 -0.03058 0.035</translation>
     </Geom>
     <mass type="custom">
@@ -157,8 +156,8 @@
     <translation>0 -0.0678 0.0984</translation>
     <Geom type="trimesh" modifiable="false">
       <diffuseColor>0.2 0.2 0.2</diffuseColor>
-      <data>meshes/robotiq_85_gripper/g5.vrml 0.001</data>
-      <render>meshes/robotiq_85_gripper/g5.vrml 0.001</render>
+      <data>meshes/robotiq_85_gripper/g5.wrl 0.001</data>
+      <render>meshes/robotiq_85_gripper/g5.wrl 0.001</render>
       <translation>0 0.0678 -0.0084</translation>
     </Geom>
     <mass type="custom">
@@ -172,8 +171,8 @@
     <translation>0 0.0678 0.0984</translation>
     <Geom type="trimesh" modifiable="false">
       <diffuseColor>0.2 0.2 0.2</diffuseColor>
-      <data>meshes/robotiq_85_gripper/g6.vrml 0.001</data>
-      <render>meshes/robotiq_85_gripper/g6.vrml 0.001</render>
+      <data>meshes/robotiq_85_gripper/g6.wrl 0.001</data>
+      <render>meshes/robotiq_85_gripper/g6.wrl 0.001</render>
       <translation>0 -0.0678 -0.0084</translation>
     </Geom>
     <mass type="custom">
@@ -187,8 +186,8 @@
     <translation>0 0 0.09</translation>
     <Geom type="trimesh" modifiable="false">
       <diffuseColor>0.2 0.2 0.2</diffuseColor>
-      <data>meshes/robotiq_85_gripper/g9.vrml 0.001</data>
-      <render>meshes/robotiq_85_gripper/g9.vrml 0.001</render>
+      <data>meshes/robotiq_85_gripper/g9.wrl 0.001</data>
+      <render>meshes/robotiq_85_gripper/g9.wrl 0.001</render>
     </Geom>
     <mass type="custom">
       <total>0.0</total>

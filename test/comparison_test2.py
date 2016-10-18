@@ -86,7 +86,6 @@ class Comparison(object):
                       [left_robot, right_robot], Lshape, q_robots_start,
                        q_robots_grasp, T_obj_start, T_obj_goal)
 
-    ################## closed chain planning ###################
     embed()
     exit(0)
 

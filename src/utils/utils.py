@@ -654,15 +654,15 @@ def merge_wpts_list(wpts_list, eps=1e-3):
   @rtype:  list
   @return: A list of merged waypoints.
   """
-  new_wpts = None
+  new_wpts = []
   for W in wpts_list:
-    if new_wpts is None:
-      new_wpts = []
-    else:
+    if not new_wpts == []:
       # Check soundness
       try:
         assert(distance(W[0][0:6], new_wpts[-1][0:6]) < eps)
       except:
+        from IPython import embed
+        embed()
         print 'W', W[0]
         print 'new', new_wpts[-1]
         assert(False)

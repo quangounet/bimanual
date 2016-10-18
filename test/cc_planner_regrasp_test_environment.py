@@ -74,7 +74,7 @@ if __name__ == "__main__":
                     right_robot.GetDOFValues()[-1]]
   T_obj_start = Lshape.GetTransform()
 
-  T_obj_goal = np.array([[ 0.   ,  1.   ,  0.   , -0],
+  T_obj_goal = np.array([[ 0.   ,  1.   ,  0.   , -0.25],
                          [ 1.   , -0.   ,  0.   , -0.175],
                          [ 0.   , -0.   , -1.   ,  0.176],
                          [ 0.   ,  0.   ,  0.   ,  1.   ]])

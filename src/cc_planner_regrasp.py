@@ -1105,6 +1105,7 @@ class CCPlanner(object):
             'IK discrepancy (robot {0})'.format(i), bold=False)
           self.robots[i].SetDOFValues([0],[self.manips[i].GetArmDOF()])
           self.robots[i].SetActiveDOFValues(v_test.config.q_robots[i])
+          sleep(0.01)
           self._output_info('Planning regrasping......')
           regrasp_info[i] = self.basemanips[i].MoveActiveJoints(
             goal=bimanual_wpts[i][0], outputtrajobj=True, execute=False)
@@ -1192,6 +1193,7 @@ class CCPlanner(object):
           self.robots[i].SetDOFValues([0],[self.manips[i].GetArmDOF()])
           self.robots[i].SetActiveDOFValues(bimanual_wpts[i][-1])
           self._output_info('Planning regrasping......')
+          sleep(0.01)          
           regrasp_info[i] = self.basemanips[i].MoveActiveJoints(
             goal=v_test.config.q_robots[i], outputtrajobj=True, execute=False)
           self.loose_gripper(self._query)
@@ -1387,6 +1389,7 @@ class CCPlanner(object):
         manip = self.manips[i]
         taskmanip = self.taskmanips[i]
         taskmanip.ReleaseFingers()
+        robot.WaitForController(0)
         traj_spec = traj.GetConfigurationSpecification()
         traj_duration = traj.GetDuration()
         for t in np.append(np.arange(0, traj_duration, 
@@ -1396,6 +1399,7 @@ class CCPlanner(object):
                                    manip.GetArmIndices())))
           sleep(refresh_step)
         taskmanip.CloseFingers()
+        robot.WaitForController(0)
 
   def visualize_cctraj(self, cctraj, speed=1.0):
     """

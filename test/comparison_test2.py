@@ -15,10 +15,6 @@ class Comparison(object):
   def __init__(self):
     np.set_printoptions(precision=10, suppress=True)
     
-    # Read configuration parameters
-    left_robot_name = 'left'
-    right_robot_name = 'right'
-
     # Load OpenRAVE environment
     scene_file = '../xml/worlds/bimanual_setup.env.xml'
     env = orpy.Environment()
@@ -49,8 +45,7 @@ class Comparison(object):
       Lshape.SetTransform(T_Lshape)
 
     # Add collision checker
-    collision_checker = orpy.RaveCreateCollisionChecker(env, 'ode')
-    env.SetCollisionChecker(collision_checker)
+    env.SetCollisionChecker(orpy.RaveCreateCollisionChecker(env, 'ode'))
 
     manip_name = 'denso_ft_sensor_gripper'
     left_manip = left_robot.SetActiveManipulator(manip_name)
@@ -64,8 +59,6 @@ class Comparison(object):
     left_taskmanip = orpy.interfaces.TaskManipulation(left_robot)
     right_basemanip = orpy.interfaces.BaseManipulation(right_robot)
     right_taskmanip = orpy.interfaces.TaskManipulation(right_robot)
-
-    orpy.RaveSetDebugLevel(orpy.DebugLevel.Fatal)
 
     ############### Move to pre-grasp position ###############
     left_robot.SetDOFValues(

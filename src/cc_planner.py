@@ -9,8 +9,8 @@ import random
 from time import time, sleep
 import traceback
 import TOPP
-from utils.utils import colorize
-from utils import utils, heap, lie
+from planningutils.utils import colorize
+from planningutils import utils, heap, lie
 from IPython import embed
 
 # Global parameters

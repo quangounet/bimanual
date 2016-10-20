@@ -89,7 +89,7 @@ class Comparison(object):
     embed()
     exit(0)
 
-    rep_time = 1
+    rep_time = 20
 
     from cc_planner_connect import CCPlanner, CCQuery
     ccplanner = CCPlanner(Lshape, [left_robot, right_robot], debug=False)

@@ -100,9 +100,8 @@ class Comparison(object):
     right_taskmanip.CloseFingers()
 
     ################## closed chain planning ###################
-    embed()
-    exit(0)
-
+    
+    rep_time = 20
     obj_translation_limits =  [[0.8, 0.8, 0.8], [-0.3, -0.3, -0.3]]
     q_robots_start = [left_robot.GetActiveDOFValues(),
                       right_robot.GetActiveDOFValues()]
@@ -119,23 +118,34 @@ class Comparison(object):
                       [left_robot, right_robot], stick, q_robots_start,
                        q_robots_grasp, T_obj_start, T_obj_goal)
 
+    embed()
+    exit(0)
+
+    rep_time = 20
+
     from cc_planner_connect import CCPlanner, CCQuery
     ccplanner = CCPlanner(stick, [left_robot, right_robot], debug=False)
-    ccquery = CCQuery(obj_translation_limits, q_robots_start, 
-      q_robots_goal, q_robots_grasp, T_obj_start, nn=2,
-      step_size=0.2, enable_bw=False)
-    ccplanner.set_query(ccquery)
-    res = ccplanner.solve(timeout=20)
+    t = time()
+    for i in xrange(rep_time):
+      ccquery = CCQuery(obj_translation_limits, q_robots_start, 
+        q_robots_goal, q_robots_grasp, T_obj_start, nn=2,
+        step_size=0.2, enable_bw=False)
+      ccplanner.set_query(ccquery)
+      res = ccplanner.solve(timeout=20)
+    print (time()-t)/rep_time
 
     from cc_planner_ms_connect import CCPlanner, CCQuery
     ccplanner = CCPlanner(stick, left_robot, right_robot, debug=False)
-    ccquery = CCQuery(q_robots_start[0], q_robots_start[1], 
-                        q_robots_goal[0], q_robots_goal[1],
-                        q_robots_grasp[0], q_robots_grasp[1], 
-                        T_obj_start, obj_translation_limits,
-                        nn=2, step_size=0.2, enable_bw=False)
-    ccplanner.set_query(ccquery)
-    res = ccplanner.solve(timeout=20)
+    t = time()
+    for i in xrange(rep_time):
+      ccquery = CCQuery(q_robots_start[0], q_robots_start[1], 
+                          q_robots_goal[0], q_robots_goal[1],
+                          q_robots_grasp[0], q_robots_grasp[1], 
+                          T_obj_start, obj_translation_limits,
+                          nn=2, step_size=0.2, enable_bw=False)
+      ccplanner.set_query(ccquery)
+      res = ccplanner.solve(timeout=20)
+    print (time()-t)/rep_time
 
     ccplanner.visualize_cctraj(ccquery.cctraj)
 

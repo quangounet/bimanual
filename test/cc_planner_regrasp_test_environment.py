@@ -45,6 +45,7 @@ if __name__ == "__main__":
 
   # Add collision checker
   env.SetCollisionChecker(orpy.RaveCreateCollisionChecker(env, 'ode'))
+  env.SetCollisionChecker(orpy.RaveCreateCollisionChecker(env, 'fcl_'))
 
   manip_name = 'denso_ft_sensor_gripper'
   left_manip = left_robot.SetActiveManipulator(manip_name)

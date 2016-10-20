@@ -793,7 +793,7 @@ def visualize_config_transition(robot, q_start, q_goal, step_num=50,
   q_start = np.array(q_start)
   q_goal = np.array(q_goal)
   delta = (q_goal - q_start)/step_num
-  for i in xrange(step_num):
+  for i in xrange(step_num+1):
     robot.SetActiveDOFValues(q_start + delta * i)
     sleep(timestep)
 

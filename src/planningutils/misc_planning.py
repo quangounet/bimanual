@@ -42,17 +42,19 @@ def plan_transit_motion(robot, q_start, q_goal, pregrasp_start=True, pregrasp_go
       robot.SetActiveDOFValues(q_start)
       eematrix = manip.GetTransform()
       direction = -eematrix[0:3, 2]
+      traj_pregrasp_start = None
       try:
         traj_pregrasp_start = basemanip.MoveHandStraight(direction, minsteps=minsteps, maxsteps=maxsteps, steplength=steplength, starteematrix=eematrix, execute=execute, outputtrajobj=True)
       except:
         _log.info("Caught an exception in MoveHandStraight (pregrasp_start).")
         return None
       if traj_pregrasp_start is None:
-        _log.info("MoveHandStraight failed (pregrasp_start.")
-        return None
-
-      new_q_start = traj_pregrasp_start.GetWaypoint(traj_pregrasp_start.GetNumWaypoints() -  1, traj_pregrasp_start.GetConfigurationSpecification().GetGroupFromName("joint_values"))
-      orpy.planningutils.RetimeActiveDOFTrajectory(traj_pregrasp_start, robot, hastimestamps=False, maxvelmult=0.9, maxaccelmult=0.81, plannername="parabolictrajectoryretimer")      
+        _log.info("MoveHandStraight failed (pregrasp_start).")
+        new_q_start = q_start
+        pregrasp_start = False
+      else:
+        new_q_start = traj_pregrasp_start.GetWaypoint(traj_pregrasp_start.GetNumWaypoints() -  1, traj_pregrasp_start.GetConfigurationSpecification().GetGroupFromName("joint_values"))
+        orpy.planningutils.RetimeActiveDOFTrajectory(traj_pregrasp_start, robot, hastimestamps=False, maxvelmult=0.9, maxaccelmult=0.81, plannername="parabolictrajectoryretimer")      
     else:
       new_q_start = q_start
 
@@ -61,27 +63,42 @@ def plan_transit_motion(robot, q_start, q_goal, pregrasp_start=True, pregrasp_go
       robot.SetActiveDOFValues(q_goal)
       eematrix = manip.GetTransform()
       direction = -eematrix[0:3, 2]
+      traj_pregrasp_goal = None
       try:
         traj_pregrasp_goal = basemanip.MoveHandStraight(direction, minsteps=minsteps, maxsteps=maxsteps, steplength=steplength, starteematrix=eematrix, execute=execute, outputtrajobj=True)
       except:
         _log.info("Caught an exception in MoveHandStraight (pregrasp_goal).")
         return None
-      if traj_pregrasp_start is None:
+      if traj_pregrasp_goal is None:
         _log.info("MoveHandStraight failed (pregrasp_goal).")
-        return None
-
-      new_q_goal = traj_pregrasp_goal.GetWaypoint(traj_pregrasp_goal.GetNumWaypoints() -  1, traj_pregrasp_goal.GetConfigurationSpecification().GetGroupFromName("joint_values"))
-      traj_pregrasp_goal_rev = orpy.planningutils.ReverseTrajectory(traj_pregrasp_goal)
-      orpy.planningutils.RetimeActiveDOFTrajectory(traj_pregrasp_goal_rev, robot, hastimestamps=False, maxvelmult=0.9, maxaccelmult=0.81, plannername="parabolictrajectoryretimer")
+        new_q_goal = q_goal
+        pregrasp_goal = False
+      else:
+        new_q_goal = traj_pregrasp_goal.GetWaypoint(traj_pregrasp_goal.GetNumWaypoints() -  1, traj_pregrasp_goal.GetConfigurationSpecification().GetGroupFromName("joint_values"))
+        traj_pregrasp_goal_rev = orpy.planningutils.ReverseTrajectory(traj_pregrasp_goal)
+        orpy.planningutils.RetimeActiveDOFTrajectory(traj_pregrasp_goal_rev, robot, hastimestamps=False, maxvelmult=0.9, maxaccelmult=0.81, plannername="parabolictrajectoryretimer")
       
     else:
       new_q_goal = q_goal
 
     # Plan a motion connecting new_q_start and new_q_goal
     try:
-      traj_connect = basemanip.MoveActiveJoints(goal=new_q_goal, maxiter=5000, initialconfigs=[new_q_start], outputtrajobj=True)
-    except:
-      _log.info("Caught an exception in MoveActiveJoints.")
+      # Using MoveActiveJoints sometimes has problems with jittering. As a fix, we plan using this birrt + parabolicsmoother
+      planner = orpy.RaveCreatePlanner(env, 'birrt')
+      params = orpy.Planner.PlannerParameters()
+      params.SetRobotActiveJoints(robot) # robot's active DOFs must be correctly set before calling this function
+      params.SetInitialConfig(new_q_start)
+      params.SetGoalConfig(new_q_goal)
+      extraparams = '<_postprocessing planner="parabolicsmoother2"><_nmaxiterations>100</_nmaxiterations></_postprocessing>'
+      params.SetExtraParameters(extraparams)
+      planner.InitPlan(robot, params)
+      traj_connect = orpy.RaveCreateTrajectory(env, '')
+      res = planner.PlanPath(traj_connect)
+      if not (res == orpy.PlannerStatus.HasSolution):
+        _log.info("Planner failed.")
+        return None
+    except Exception as e:
+      _log.info("Caught an exception ({0}) in MoveActiveJoints.".format(e))
       return None
     if traj_connect is None:
       _log.info("MoveActiveJoints failed.")

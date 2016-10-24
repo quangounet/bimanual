@@ -160,7 +160,7 @@ class ClosedChainMotion(object):
                         q_robots_goal[1], q_robots_goal[0],
                         q_robots_grasp[1], q_robots_grasp[0], 
                         T_obj_start, obj_translation_limits,
-                        nn=2, step_size=0.2, enable_bw=False)
+                        nn=2, step_size=0.2, enable_bw=True)
     ccplanner.set_query(ccquery)
     res = ccplanner.solve(timeout=20)
 

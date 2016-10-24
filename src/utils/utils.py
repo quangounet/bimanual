@@ -726,6 +726,17 @@ def discretize_wpts(q_init, q_final, step_count):
     wpts.append(q_init + q_delta*(i+1))
   return wpts
 
+def arange(start, end, step):
+  """
+  An discretization function almost same as np.arange() when difference
+  between C{start} and C{end} is multiple of C{step}, but fixing possible
+  error caused by float rounding so that C{end} is always excluded.
+  """
+  array = np.arange(start, end, step)
+  if np.isclose(array[-1], end):
+    array = array[:-1]
+  return array
+
 ########################### Manipulator related ###########################
 def compute_endeffector_transform(manip, q):
   """

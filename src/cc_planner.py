@@ -359,8 +359,8 @@ class CCQuery(object):
   def __init__(self, obj_translation_limits, q_robots_start, q_robots_goal, 
                q_robots_grasp, T_obj_start, T_obj_goal=None, nn=-1, 
                step_size=0.7, velocity_scale=1, interpolation_duration=None, 
-               predict=False, predict_multi=10.0, discr_timestep=5e-3, 
-               discr_check_timestep=None, enable_bw=False):
+               discr_timestep=5e-3, discr_check_timestep=None,
+               enable_bw=False):
     """
     CCQuery constructor. It is independent of robots to be planned since robot
     info will be stored in planner itself.
@@ -405,9 +405,6 @@ class CCQuery(object):
     @param interpolation_duration: Length of time used for interpolating 
                                    trajectory connecting vertices. This needs 
                                    to be multiple of C{discr_check_timestep}
-    @type                 predict: bool
-    @param                predict: B{True} if predication in C{plan} is to be 
-                                   used.
     @type          discr_timestep: float
     @param         discr_timestep: Timestep between adjacent waypoints.
     @type    discr_check_timestep: float
@@ -441,8 +438,6 @@ class CCQuery(object):
     self.discr_timestep         = discr_timestep
     self.discr_check_timestep   = discr_check_timestep
     self.enable_bw              = enable_bw
-    self.predict                = predict
-    self.predict_multi          = predict_multi
 
     if step_size < 0.1:
       raise CCPlannerException('step_size should not be less than 0.1')
@@ -832,7 +827,7 @@ class CCPlanner(object):
 
         new_SE3_config = SE3Config(q_end, p_end, qd_end, pd_end)
         status = ADVANCED
-      # Check collision (SE3_config) # BIGHEAD: CheckCollision
+      # Check collision (SE3_config)
       res = self.is_collision_free_SE3_config(new_SE3_config)
       if not res:
         self._output_debug('TRAPPED : SE(3) config in collision', bold=False)
@@ -841,7 +836,6 @@ class CCPlanner(object):
 
       # Check reachability (SE3_config)
       res = self.check_SE3_config_reachability(new_SE3_config)
-      # BIGHEAD: FindIKSolution
       if not res:
         self._output_debug('TRAPPED : SE(3) config not reachable', bold=False)
         status = TRAPPED
@@ -867,7 +861,6 @@ class CCPlanner(object):
 
       # Check collision (object trajectory)
       res = self.is_collision_free_SE3_traj(rot_traj, translation_traj, R_beg)
-      # BIGHEAD: EvalRotation and CheckCollision
       if not res:
         self._output_debug('TRAPPED : SE(3) trajectory in collision', 
                            bold=False)
@@ -878,7 +871,6 @@ class CCPlanner(object):
       passed, bimanual_wpts, timestamps = self.check_SE3_traj_reachability(
         lie.LieTraj([R_beg, R_end], [rot_traj]), translation_traj,
         v_near.config.q_robots)
-      #BIGHEAD ComputIK and CheckCollision
       if not passed:
         self._output_debug('TRAPPED : SE(3) trajectory not reachable', 
                            bold=False)
@@ -943,7 +935,7 @@ class CCPlanner(object):
         new_SE3_config = SE3Config(q_beg, p_beg, qd_beg, pd_beg)
         status = ADVANCED
 
-      # Check collision (SE3_config) # BIGHEAD: CheckCollision
+      # Check collision (SE3_config)
       res = self.is_collision_free_SE3_config(new_SE3_config)
       if not res:
         self._output_debug('TRAPPED : SE(3) config in collision', bold=False)
@@ -952,7 +944,6 @@ class CCPlanner(object):
 
       # Check reachability (SE3_config)
       res = self.check_SE3_config_reachability(new_SE3_config)
-      # BIGHEAD: FindIKSolution
       if not res:
         self._output_debug('TRAPPED : SE(3) config not reachable', bold=False)
         status = TRAPPED
@@ -977,7 +968,6 @@ class CCPlanner(object):
 
       # Check collision (object trajectory)
       res = self.is_collision_free_SE3_traj(rot_traj, translation_traj, R_beg)
-      # BIGHEAD: EvalRotation and CheckCollision
       if not res:
         self._output_debug('TRAPPED : SE(3) trajectory in collision', 
                            bold=False)
@@ -988,7 +978,6 @@ class CCPlanner(object):
       passed, bimanual_wpts, timestamps = self.check_SE3_traj_reachability(
         lie.LieTraj([R_beg, R_end], [rot_traj]), translation_traj,
         v_near.config.q_robots, direction=BW)
-      #BIGHEAD ComputIK and CheckCollision
       if not passed:
         self._output_debug('TRAPPED : SE(3) trajectory not reachable', 
                            bold=False)
@@ -1224,7 +1213,9 @@ class CCPlanner(object):
     with self.env:
       self._enable_robots_collision(False)
 
-      for t in np.append(np.arange(0, translation_traj.duration, self._query.discr_check_timestep), translation_traj.duration):
+      for t in np.append(utils.arange(0, translation_traj.duration, 
+                         self._query.discr_check_timestep), 
+                         translation_traj.duration):
         T[0:3, 0:3] = lie.EvalRotation(R_beg, rot_traj, t)
         T[0:3, 3] = translation_traj.Eval(t)
 
@@ -1292,7 +1283,6 @@ class CCPlanner(object):
     passed, bimanual_wpts, timestamps = self.bimanual_obj_tracker.plan(
       lie_traj, translation_traj, self.bimanual_T_rel, ref_sols,
       self._query.discr_timestep, self._query.discr_check_timestep, 
-      self._query.step_size*self._query.predict_multi, self._query.predict,
       direction)
     if not passed:
       return False, [], []
@@ -1346,7 +1336,7 @@ class CCPlanner(object):
     refresh_step  = sampling_step / speed
 
     T_obj = np.eye(4)
-    for t in np.append(np.arange(0, lie_traj.duration, sampling_step), 
+    for t in np.append(utils.arange(0, lie_traj.duration, sampling_step), 
                        lie_traj.duration):
       T_obj[0:3, 0:3] = lie_traj.EvalRotation(t)
       T_obj[0:3, 3] = translation_traj.Eval(t)
@@ -1591,7 +1581,7 @@ class BimanualObjectTracker(object):
     """
     self._vmax = self.robots[0].GetDOFVelocityLimits()[0:self._ndof]
 
-  def plan(self, lie_traj, translation_traj, bimanual_T_rel, q_robots_init, discr_timestep, discr_check_timestep, q_threshold, predict, direction=FW):
+  def plan(self, lie_traj, translation_traj, bimanual_T_rel, q_robots_init, discr_timestep, discr_check_timestep, direction=FW):
     """
     Plan trajectories for both robots to track the manipulated object.
 
@@ -1615,11 +1605,6 @@ class BimanualObjectTracker(object):
                                  (other waypoints are interpolated)
                                  This needs to be multiple of C{discr_timestep} for uniformity in 
                                  trajectory generated.
-    @type           q_threshold: float
-    @param          q_threshold: Distance threshold for predicting whether 
-                                 the new end-effector transformation is 
-                                 trackable. This value is set to 8x 
-                                 query.step_size, determined from experiments.
     @type             direction: int
     @param            direction: Direction of this planning. This is to be BW 
                                  when this function is called in 
@@ -1635,19 +1620,6 @@ class BimanualObjectTracker(object):
     """
     if direction == FW:
       duration = lie_traj.duration
-
-      if predict:
-        # Predict whether IK solutions could exist
-        T_obj_goal = np.eye(4)
-        T_obj_goal[0:3, 0:3] = lie_traj.EvalRotation(duration)
-        T_obj_goal[0:3, 3] = translation_traj.Eval(duration)
-        for i in xrange(self._nrobots):
-          self.robots[i].SetActiveDOFValues(q_robots_init[i])
-          q_sol = self.manips[i].FindIKSolution(np.dot(T_obj_goal, bimanual_T_rel[i]), IK_IGNORE_COLLISION)
-          if q_sol is None:
-            return False, [], []
-          if utils.distance(q_robots_init[i], q_sol, 3) > q_threshold:
-            return False, [], []
 
       cycle_length = int(discr_check_timestep / discr_timestep)
 
@@ -1666,7 +1638,7 @@ class BimanualObjectTracker(object):
       self._jd_max = self._vmax * discr_check_timestep
 
       T_obj = np.eye(4)
-      for t in np.append(np.arange(discr_check_timestep, duration, 
+      for t in np.append(utils.arange(discr_check_timestep, duration, 
                          discr_check_timestep), duration):
         T_obj[0:3, 0:3] = lie_traj.EvalRotation(t)
         T_obj[0:3, 3] = translation_traj.Eval(t)
@@ -1675,40 +1647,27 @@ class BimanualObjectTracker(object):
         for i in xrange(self._nrobots):
           bimanual_T_gripper.append(np.dot(T_obj, bimanual_T_rel[i]))
         
-        q_robots_next = []
+        q_robots_new = []
         for i in xrange(self._nrobots):
           q_sol = self._compute_IK(i, bimanual_T_gripper[i], q_robots_prev[i])
           if q_sol is None:
             return False, [], []
-          q_robots_next.append(q_sol)
+          q_robots_new.append(q_sol)
 
-        if not self._is_feasible_bimanual_config(q_robots_next, q_robots_prev, T_obj):
+        if not self._is_feasible_bimanual_config(q_robots_new, q_robots_prev, T_obj):
           return False, [], []
 
         # New bimanual config now passed all checks
         # Interpolate waypoints in-between
         for i in xrange(self._nrobots):
-          bimanual_wpts[i] += utils.discretize_wpts(q_robots_prev[i], q_robots_next[i], cycle_length)
+          bimanual_wpts[i] += utils.discretize_wpts(q_robots_prev[i], q_robots_new[i], cycle_length)
         timestamps += list(np.linspace(t_prev+discr_timestep, t, cycle_length))
         t_prev = t
-        q_robots_prev = q_robots_next
+        q_robots_prev = q_robots_new
       
       return True, bimanual_wpts, timestamps
 
     else:
-      if predict:
-        # Predict whether IK solutions could exist
-        T_obj_goal = np.eye(4)
-        T_obj_goal[0:3, 0:3] = lie_traj.EvalRotation(0)
-        T_obj_goal[0:3, 3] = translation_traj.Eval(0)
-        for i in xrange(self._nrobots):
-          self.robots[i].SetActiveDOFValues(q_robots_init[i])
-          q_sol = self.manips[i].FindIKSolution(np.dot(T_obj_goal, bimanual_T_rel[i]), IK_IGNORE_COLLISION)
-          if q_sol is None:
-            return False, [], []
-          if utils.distance(q_robots_init[i], q_sol, 3) > q_threshold:
-            return False, [], []
-
       duration = lie_traj.duration
       cycle_length = int(discr_check_timestep / discr_timestep)
 
@@ -1727,8 +1686,8 @@ class BimanualObjectTracker(object):
       self._jd_max = self._vmax * discr_check_timestep
       
       T_obj = np.eye(4)
-      for t in np.append(np.arange(duration-discr_check_timestep, 
-                         discr_check_timestep, -discr_check_timestep), 0):
+      for t in np.append(utils.arange(duration-discr_check_timestep, 
+                         0, -discr_check_timestep), 0):
         T_obj[0:3, 0:3] = lie_traj.EvalRotation(t)
         T_obj[0:3, 3] = translation_traj.Eval(t)
 
@@ -1736,23 +1695,23 @@ class BimanualObjectTracker(object):
         for i in xrange(self._nrobots):
           bimanual_T_gripper.append(np.dot(T_obj, bimanual_T_rel[i]))
         
-        q_robots_next = []
+        q_robots_new = []
         for i in xrange(self._nrobots):
           q_sol = self._compute_IK(i, bimanual_T_gripper[i], q_robots_prev[i])
           if q_sol is None:
             return False, [], []
-          q_robots_next.append(q_sol)
+          q_robots_new.append(q_sol)
 
-        if not self._is_feasible_bimanual_config(q_robots_next, q_robots_prev, T_obj):
+        if not self._is_feasible_bimanual_config(q_robots_new, q_robots_prev, T_obj):
           return False, [], []
 
         # New bimanual config now passed all checks
         # Interpolate waypoints in-between
         for i in xrange(self._nrobots):
-          bimanual_wpts[i] += utils.discretize_wpts(q_robots_prev[i], q_robots_next[i], cycle_length)
+          bimanual_wpts[i] += utils.discretize_wpts(q_robots_prev[i], q_robots_new[i], cycle_length)
         timestamps += list(np.linspace(t_prev-discr_timestep, t, cycle_length))
         t_prev = t
-        q_robots_prev = q_robots_next
+        q_robots_prev = q_robots_new
 
       # Reverse waypoints and timestamps
       bimanual_wpts[0].reverse()

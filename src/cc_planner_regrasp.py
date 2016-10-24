@@ -84,8 +84,7 @@ class CCTrajectory(object):
   a trajectory in closed-chain motions.
   """
 
-  def __init__(self, lie_traj, translation_traj, 
-               sectioned_bimanual_wpts, timestamps):
+  def __init__(self, lie_traj, translation_traj, bimanual_trajs, timestamps):
     """
     CCTrajectory constructor.
 
@@ -100,11 +99,10 @@ class CCTrajectory(object):
     @param       timestamps: Timestamps for time parameterization 
                              of C{bimanual_wpts}.
     """
-    self.lie_traj                = lie_traj
-    self.translation_traj        = translation_traj
-    self.sectioned_bimanual_wpts = sectioned_bimanual_wpts
-    self.timestamps              = timestamps[:]
-      
+    self.lie_traj         = lie_traj
+    self.translation_traj = translation_traj
+    self.bimanual_trajs   = bimanual_trajs
+    self.timestamps       = timestamps[:]
 
 class CCConfig(object):
   """
@@ -148,7 +146,12 @@ class CCVertex(object):
     self.bimanual_wpts    = []
     self.timestamps       = []
     self.level            = 0
+    self.contain_regrasp  = False
 
+
+  def add_regrasp(self, bimanual_regrasp_traj):
+    self.contain_regrasp = True
+    self.bimanual_regrasp_traj = bimanual_regrasp_traj  
 
 class CCTree(object):  
   """
@@ -295,7 +298,7 @@ class CCTree(object):
     return translation_traj_list
 
 
-  def generate_bimanual_wpts_list(self, end_index=-1):
+  def generate_bimanual_trajs(self, end_index=-1):
     """
     Return all C{bimanual_wpts} of vertices 
     connecting the specified vertex and C{v_root}.
@@ -308,20 +311,19 @@ class CCTree(object):
     @return: A list containing all C{bimanual_wpts} of all vertices, 
              starting from vertex with a earlier C{timestamp}.
     """
-    bimanual_wpts_list = [[], []]
+    bimanual_trajs = []
       
     vertex = self.vertices[end_index]
     while (vertex.parent_index is not None):
-      parent = self.vertices[vertex.parent_index]
-      for i in xrange(2):
-        bimanual_wpts_list[i].append(vertex.bimanual_wpts[i])
-      vertex = parent
+      if vertex.contain_regrasp:
+        bimanual_trajs.append(vertex.bimanual_regrasp_traj)
+      bimanual_trajs.append(vertex.bimanual_wpts)
+      vertex = self.vertices[vertex.parent_index]
 
     if (self.treetype == FW):
-      for i in xrange(2):
-        bimanual_wpts_list[i].reverse()
-        
-    return bimanual_wpts_list
+        bimanual_trajs.reverse()
+
+    return bimanual_trajs
 
 
   def generate_timestamps_list(self, end_index=-1):
@@ -463,8 +465,7 @@ class CCQuery(object):
     self.translation_traj_list       = None
     self.translation_traj            = None
     self.timestamps                  = None
-    self.sectioned_bimanual_wpts     = None
-    self.regrasp_info                = None
+    self.bimanual_trajs              = None
 
     # Statistics
     self.running_time    = 0.0
@@ -517,7 +518,7 @@ class CCQuery(object):
     # Convert translation_traj_list to translation_traj
     self.translation_traj = TrajectoryFromStr(utils.traj_str_from_traj_list(self.translation_traj_list))
 
-  def generate_final_sectioned_bimanual_wpts(self):
+  def generate_final_bimanual_trajs(self):
     """
     Generate final waypoints for both robots in the bimanual set-up of this 
     query (if solved) and store it in {self.bimanual_wpts}. 
@@ -525,27 +526,12 @@ class CCQuery(object):
     if not self.solved:
       raise CCPlannerException('Query not solved.')
       return
-    bimanual_wpts_list_fw = self.tree_start.generate_bimanual_wpts_list()  
-    bimanual_wpts_list_bw = self.tree_end.generate_bimanual_wpts_list()
+    
+    bimanual_trajs = self.tree_start.generate_bimanual_trajs()  
+    bimanual_trajs.append(self.connecting_bimanual_wpts)        
+    bimanual_trajs += self.tree_end.generate_bimanual_trajs()
 
-    self.sectioned_bimanual_wpts = {}
-    self.sectioned_bimanual_wpts['regrasp'] = self.regrasp_info
-    self.sectioned_bimanual_wpts['fw'] = \
-      [utils.merge_wpts_list(bimanual_wpts_list_fw[0]),
-       utils.merge_wpts_list(bimanual_wpts_list_fw[1])]
-    self.sectioned_bimanual_wpts['bw'] = \
-      [utils.merge_wpts_list(bimanual_wpts_list_bw[0])[1:],
-       utils.merge_wpts_list(bimanual_wpts_list_bw[1])[1:]]
-    if len(self.sectioned_bimanual_wpts['fw'][0]) == 0:
-      self.sectioned_bimanual_wpts['cn'] = \
-        [self.connecting_bimanual_wpts[0],
-         self.connecting_bimanual_wpts[1]]
-    else:
-      self.sectioned_bimanual_wpts['cn'] = \
-        [self.connecting_bimanual_wpts[0][1:],
-         self.connecting_bimanual_wpts[1][1:]]
-
-
+    self.bimanual_trajs = utils.merge_bimanual_trajs_wpts_list(bimanual_trajs)
 
   def generate_final_timestamps(self):
     """
@@ -577,10 +563,10 @@ class CCQuery(object):
     self.generate_final_lie_traj()
     self.generate_final_translation_traj()
     self.generate_final_timestamps()
-    self.generate_final_sectioned_bimanual_wpts()
+    self.generate_final_bimanual_trajs()
     
-    self.cctraj = CCTrajectory(self.lie_traj, self.translation_traj, self.sectioned_bimanual_wpts, self.timestamps)
-
+    self.cctraj = CCTrajectory(self.lie_traj, self.translation_traj, 
+                               self.bimanual_trajs, self.timestamps)
 
 class CCPlanner(object):
   """
@@ -841,7 +827,7 @@ class CCPlanner(object):
 
         new_SE3_config = SE3Config(q_end, p_end, qd_end, pd_end)
         status = ADVANCED
-      # Check collision (SE3_config) # BIGHEAD: CheckCollision
+      # Check collision (SE3_config)
       res = self.is_collision_free_SE3_config(new_SE3_config)
       if not res:
         self._output_debug('TRAPPED : SE(3) config in collision', bold=False)
@@ -850,7 +836,6 @@ class CCPlanner(object):
 
       # Check reachability (SE3_config)
       res = self.check_SE3_config_reachability(new_SE3_config)
-      # BIGHEAD: FindIKSolution
       if not res:
         self._output_debug('TRAPPED : SE(3) config not reachable', bold=False)
         status = TRAPPED
@@ -876,7 +861,6 @@ class CCPlanner(object):
 
       # Check collision (object trajectory)
       res = self.is_collision_free_SE3_traj(rot_traj, translation_traj, R_beg)
-      # BIGHEAD: EvalRotation and CheckCollision
       if not res:
         self._output_debug('TRAPPED : SE(3) trajectory in collision', 
                            bold=False)
@@ -887,7 +871,6 @@ class CCPlanner(object):
       passed, bimanual_wpts, timestamps = self.check_SE3_traj_reachability(
         lie.LieTraj([R_beg, R_end], [rot_traj]), translation_traj,
         v_near.config.q_robots)
-      #BIGHEAD ComputIK and CheckCollision
       if not passed:
         self._output_debug('TRAPPED : SE(3) trajectory not reachable', 
                            bold=False)
@@ -952,7 +935,7 @@ class CCPlanner(object):
         new_SE3_config = SE3Config(q_beg, p_beg, qd_beg, pd_beg)
         status = ADVANCED
 
-      # Check collision (SE3_config) # BIGHEAD: CheckCollision
+      # Check collision (SE3_config)
       res = self.is_collision_free_SE3_config(new_SE3_config)
       if not res:
         self._output_debug('TRAPPED : SE(3) config in collision', bold=False)
@@ -961,7 +944,6 @@ class CCPlanner(object):
 
       # Check reachability (SE3_config)
       res = self.check_SE3_config_reachability(new_SE3_config)
-      # BIGHEAD: FindIKSolution
       if not res:
         self._output_debug('TRAPPED : SE(3) config not reachable', bold=False)
         status = TRAPPED
@@ -986,7 +968,6 @@ class CCPlanner(object):
 
       # Check collision (object trajectory)
       res = self.is_collision_free_SE3_traj(rot_traj, translation_traj, R_beg)
-      # BIGHEAD: EvalRotation and CheckCollision
       if not res:
         self._output_debug('TRAPPED : SE(3) trajectory in collision', 
                            bold=False)
@@ -997,7 +978,6 @@ class CCPlanner(object):
       passed, bimanual_wpts, timestamps = self.check_SE3_traj_reachability(
         lie.LieTraj([R_beg, R_end], [rot_traj]), translation_traj,
         v_near.config.q_robots, direction=BW)
-      #BIGHEAD ComputIK and CheckCollision
       if not passed:
         self._output_debug('TRAPPED : SE(3) trajectory not reachable', 
                            bold=False)
@@ -1091,28 +1071,28 @@ class CCPlanner(object):
         continue
 
       # Check similarity of terminal IK solutions
-      regrasp_info = [None, None, 'fw']
+      bimanual_regrasp_traj = {0: None, 1: None}
       eps = 1e-3
       for i in xrange(2):
         if not utils.distance(v_test.config.q_robots[i], 
                   bimanual_wpts[i][0]) < eps:
-          self._output_info(
-            'IK discrepancy (robot {0})'.format(i), bold=False)
-          self.robots[i].SetDOFValues([0],[self.manips[i].GetArmDOF()])
+          self._output_info('IK discrepancy (robot {0})'.format(i), 
+                            bold=False)
+          self.robots[i].SetDOFValues([0], [self.manips[i].GetArmDOF()])
           self.robots[i].SetActiveDOFValues(v_test.config.q_robots[i])
           sleep(0.01)
           self._output_info('Planning regrasping......')
-          regrasp_info[i] = self.basemanips[i].MoveActiveJoints(
+          bimanual_regrasp_traj[i] = self.basemanips[i].MoveActiveJoints(
             goal=bimanual_wpts[i][0], outputtrajobj=True, execute=False)
           self.loose_gripper(self._query)
 
       # Now the connection is successful
+      v_test.add_regrasp(bimanual_regrasp_traj)
       self._query.tree_end.vertices.append(v_near)
       self._query.connecting_rot_traj         = rot_traj
       self._query.connecting_translation_traj = translation_traj
       self._query.connecting_bimanual_wpts    = bimanual_wpts
       self._query.connecting_timestamps       = timestamps
-      self._query.regrasp_info = regrasp_info
       status = REACHED
       return status
     return status        
@@ -1178,28 +1158,28 @@ class CCPlanner(object):
         continue
 
       # Check similarity of terminal IK solutions
-      regrasp_info = [None, None, 'bw']
+      bimanual_regrasp_traj = {0: None, 1: None}
       eps = 1e-3
       for i in xrange(2):
         if not utils.distance(v_test.config.q_robots[i], 
                   bimanual_wpts[i][-1]) < eps:
           self._output_info(
             'IK discrepancy (robot {0})'.format(i), bold=False)
-          self.robots[i].SetDOFValues([0],[self.manips[i].GetArmDOF()])
+          self.robots[i].SetDOFValues([0], [self.manips[i].GetArmDOF()])
           self.robots[i].SetActiveDOFValues(bimanual_wpts[i][-1])
           self._output_info('Planning regrasping......')
           sleep(0.01)          
-          regrasp_info[i] = self.basemanips[i].MoveActiveJoints(
+          bimanual_regrasp_traj[i] = self.basemanips[i].MoveActiveJoints(
             goal=v_test.config.q_robots[i], outputtrajobj=True, execute=False)
           self.loose_gripper(self._query)
 
       # Now the connection is successful
+      v_test.add_regrasp(bimanual_regrasp_traj)
       self._query.tree_start.vertices.append(v_near)
       self._query.connecting_rot_traj         = rot_traj
       self._query.connecting_translation_traj = translation_traj
       self._query.connecting_bimanual_wpts    = bimanual_wpts
       self._query.connecting_timestamps       = timestamps
-      self._query.regrasp_info = regrasp_info
       status = REACHED
       return status
     return status        
@@ -1245,7 +1225,9 @@ class CCPlanner(object):
     with self.env:
       self._enable_robots_collision(False)
 
-      for t in np.append(np.arange(0, translation_traj.duration, self._query.discr_check_timestep), translation_traj.duration):
+      for t in np.append(utils.arange(0, translation_traj.duration, 
+                         self._query.discr_check_timestep), 
+                         translation_traj.duration):
         T[0:3, 0:3] = lie.EvalRotation(R_beg, rot_traj, t)
         T[0:3, 3] = translation_traj.Eval(t)
 
@@ -1312,7 +1294,7 @@ class CCPlanner(object):
     """
     passed, bimanual_wpts, timestamps = self.bimanual_obj_tracker.plan(
       lie_traj, translation_traj, self.bimanual_T_rel, ref_sols,
-      self._query.discr_timestep, self._query.discr_check_timestep,
+      self._query.discr_timestep, self._query.discr_check_timestep, 
       direction)
     if not passed:
       return False, [], []
@@ -1366,27 +1348,28 @@ class CCPlanner(object):
     refresh_step  = sampling_step / speed
 
     T_obj = np.eye(4)
-    for t in np.append(np.arange(0, lie_traj.duration, sampling_step), 
+    for t in np.append(utils.arange(0, lie_traj.duration, sampling_step), 
                        lie_traj.duration):
       T_obj[0:3, 0:3] = lie_traj.EvalRotation(t)
       T_obj[0:3, 3] = translation_traj.Eval(t)
       obj.SetTransform(T_obj)
       sleep(refresh_step)
 
-  def visualize_regrasp_traj(self, trajs, speed=1.0):
+  def visualize_regrasp_traj(self, bimanual_traj, speed=1.0):
     sampling_step = 0.01
     refresh_step  = sampling_step / speed
 
-    for (i, traj) in enumerate(trajs):
+    for index in bimanual_traj:
+      traj = bimanual_traj[index]
       if traj is not None:
-        robot = self.robots[i]
-        manip = self.manips[i]
-        taskmanip = self.taskmanips[i]
+        robot = self.robots[index]
+        manip = self.manips[index]
+        taskmanip = self.taskmanips[index]
         taskmanip.ReleaseFingers()
         robot.WaitForController(0)
         traj_spec = traj.GetConfigurationSpecification()
         traj_duration = traj.GetDuration()
-        for t in np.append(np.arange(0, traj_duration, 
+        for t in np.append(utils.arange(0, traj_duration, 
                            sampling_step), traj_duration):
           robot.SetActiveDOFValues(list(traj_spec.ExtractJointValues(
                                    traj.Sample(t), robot, 
@@ -1405,53 +1388,29 @@ class CCPlanner(object):
     @type   speed: float
     @param  speed: Speed of the visualization.
     """
-    timestamps = cctraj.timestamps
-    lie_traj   = cctraj.lie_traj
+    timestamps       = cctraj.timestamps
+    lie_traj         = cctraj.lie_traj
     translation_traj = cctraj.translation_traj
-    bimanual_wpts_fw = cctraj.sectioned_bimanual_wpts['fw']
-    bimanual_wpts_cn = cctraj.sectioned_bimanual_wpts['cn']
-    bimanual_wpts_bw = cctraj.sectioned_bimanual_wpts['bw']
-    regrasp_info = cctraj.sectioned_bimanual_wpts['regrasp']
-
-    len_fw = len(cctraj.sectioned_bimanual_wpts['fw'][0])
-    len_cn = len(cctraj.sectioned_bimanual_wpts['cn'][0])
-    len_bw = len(cctraj.sectioned_bimanual_wpts['bw'][0])
-
-    timestamps_fw = timestamps[:len_fw]
-    timestamps_cn = timestamps[len_fw:len_fw+len_cn]
-    timestamps_bw = timestamps[len_fw+len_cn:len_fw+len_cn+len_bw]
+    bimanual_trajs   = cctraj.bimanual_trajs
 
     sampling_step = timestamps[1] - timestamps[0]
     refresh_step  = sampling_step / speed
 
+    timestamp_index = 0
     T_obj = np.eye(4)
-
-    for (i, t) in enumerate(timestamps_fw):
-      T_obj[0:3, 0:3] = lie_traj.EvalRotation(t)
-      T_obj[0:3, 3] = translation_traj.Eval(t)
-      self.obj.SetTransform(T_obj)
-      self.robots[0].SetActiveDOFValues(bimanual_wpts_fw[0][i])
-      self.robots[1].SetActiveDOFValues(bimanual_wpts_fw[1][i])
-      sleep(refresh_step)
-    if regrasp_info[2] == 'fw':
-      self.visualize_regrasp_traj(regrasp_info[:2], speed=speed)
-    for (i, t) in enumerate(timestamps_cn):
-      T_obj[0:3, 0:3] = lie_traj.EvalRotation(t)
-      T_obj[0:3, 3] = translation_traj.Eval(t)
-      self.obj.SetTransform(T_obj)
-      self.robots[0].SetActiveDOFValues(bimanual_wpts_cn[0][i])
-      self.robots[1].SetActiveDOFValues(bimanual_wpts_cn[1][i])
-      sleep(refresh_step)
-    if regrasp_info[2] == 'bw':
-      self.visualize_regrasp_traj(regrasp_info[:2], speed=speed)
-    for (i, t) in enumerate(timestamps_bw):
-      T_obj[0:3, 0:3] = lie_traj.EvalRotation(t)
-      T_obj[0:3, 3] = translation_traj.Eval(t)
-      self.obj.SetTransform(T_obj)
-      self.robots[0].SetActiveDOFValues(bimanual_wpts_bw[0][i])
-      self.robots[1].SetActiveDOFValues(bimanual_wpts_bw[1][i])
-      sleep(refresh_step)
-
+    for bimanual_traj in bimanual_trajs:
+      if type(bimanual_traj) is not dict:
+        for (q_left, q_right) in zip(bimanual_traj[0], bimanual_traj[1]):
+          t = timestamps[timestamp_index]
+          T_obj[0:3, 0:3] = lie_traj.EvalRotation(t)
+          T_obj[0:3, 3] = translation_traj.Eval(t)
+          self.obj.SetTransform(T_obj)
+          self.robots[0].SetActiveDOFValues(q_left)
+          self.robots[1].SetActiveDOFValues(q_right)
+          sleep(refresh_step)
+          timestamp_index += 1
+      else:
+        self.visualize_regrasp_traj(bimanual_traj, speed=speed)
 
   def shortcut(self, query, maxiter=20):
     """
@@ -1720,7 +1679,7 @@ class BimanualObjectTracker(object):
       self._jd_max = self._vmax * discr_check_timestep
 
       T_obj = np.eye(4)
-      for t in np.append(np.arange(discr_check_timestep, duration, 
+      for t in np.append(utils.arange(discr_check_timestep, duration, 
                          discr_check_timestep), duration):
         T_obj[0:3, 0:3] = lie_traj.EvalRotation(t)
         T_obj[0:3, 3] = translation_traj.Eval(t)
@@ -1729,28 +1688,31 @@ class BimanualObjectTracker(object):
         for i in xrange(self._nrobots):
           bimanual_T_gripper.append(np.dot(T_obj, bimanual_T_rel[i]))
         
-        q_robots_next = []
+        q_robots_new = []
         for i in xrange(self._nrobots):
           q_sol = self._compute_IK(i, bimanual_T_gripper[i], q_robots_prev[i])
           if q_sol is None:
             return False, [], []
-          q_robots_next.append(q_sol)
+          q_robots_new.append(q_sol)
 
-        if not self._is_feasible_bimanual_config(q_robots_next, q_robots_prev, T_obj):
+        if not self._is_feasible_bimanual_config(q_robots_new, q_robots_prev, T_obj):
           return False, [], []
 
         # New bimanual config now passed all checks
         # Interpolate waypoints in-between
         for i in xrange(self._nrobots):
-          bimanual_wpts[i] += utils.discretize_wpts(q_robots_prev[i], q_robots_next[i], cycle_length)
-        timestamps += list(np.linspace(t_prev+discr_timestep, t, cycle_length))
+          bimanual_wpts[i] += utils.discretize_wpts(q_robots_prev[i], q_robots_new[i], cycle_length)
+        timestamps += list(np.linspace(t_prev+discr_timestep, 
+                                       t, cycle_length))
         t_prev = t
-        q_robots_prev = q_robots_next
+        q_robots_prev = q_robots_new
       
       return True, bimanual_wpts, timestamps
 
+
     else:
       duration = lie_traj.duration
+
       cycle_length = int(discr_check_timestep / discr_timestep)
 
       # Trajectory tracking loop
@@ -1768,8 +1730,8 @@ class BimanualObjectTracker(object):
       self._jd_max = self._vmax * discr_check_timestep
       
       T_obj = np.eye(4)
-      for t in np.append(np.arange(duration-discr_check_timestep, 
-                         discr_check_timestep, -discr_check_timestep), 0):
+      for t in np.append(utils.arange(duration-discr_check_timestep, 0, 
+                                      -discr_check_timestep), 0):
         T_obj[0:3, 0:3] = lie_traj.EvalRotation(t)
         T_obj[0:3, 3] = translation_traj.Eval(t)
 
@@ -1777,23 +1739,23 @@ class BimanualObjectTracker(object):
         for i in xrange(self._nrobots):
           bimanual_T_gripper.append(np.dot(T_obj, bimanual_T_rel[i]))
         
-        q_robots_next = []
+        q_robots_new = []
         for i in xrange(self._nrobots):
           q_sol = self._compute_IK(i, bimanual_T_gripper[i], q_robots_prev[i])
           if q_sol is None:
             return False, [], []
-          q_robots_next.append(q_sol)
+          q_robots_new.append(q_sol)
 
-        if not self._is_feasible_bimanual_config(q_robots_next, q_robots_prev, T_obj):
+        if not self._is_feasible_bimanual_config(q_robots_new, q_robots_prev, T_obj):
           return False, [], []
 
         # New bimanual config now passed all checks
         # Interpolate waypoints in-between
         for i in xrange(self._nrobots):
-          bimanual_wpts[i] += utils.discretize_wpts(q_robots_prev[i], q_robots_next[i], cycle_length)
+          bimanual_wpts[i] += utils.discretize_wpts(q_robots_prev[i], q_robots_new[i], cycle_length)
         timestamps += list(np.linspace(t_prev-discr_timestep, t, cycle_length))
         t_prev = t
-        q_robots_prev = q_robots_next
+        q_robots_prev = q_robots_new
 
       # Reverse waypoints and timestamps
       bimanual_wpts[0].reverse()

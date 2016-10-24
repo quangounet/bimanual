@@ -57,8 +57,7 @@ if __name__ == "__main__":
   ccplanner = ccp.CCPlanner(cage, [left_robot, right_robot], debug=False)
   ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, q_robots_goal,
                         q_robots_grasp, T_obj_start, nn=2, step_size=0.5,
-                        predict=False, velocity_scale=velocity_scale, 
-                        enable_bw=True)
+                        velocity_scale=velocity_scale, enable_bw=True)
   ccplanner.set_query(ccquery)
   res = ccplanner.solve(timeout=20)
 
@@ -67,8 +66,7 @@ if __name__ == "__main__":
   ccplanner = ccp.CCPlanner(cage, [left_robot, right_robot], debug=False)
   ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, q_robots_goal,
                         q_robots_grasp, T_obj_start, nn=2, step_size=0.5,
-                        predict=False, velocity_scale=velocity_scale, 
-                        enable_bw=True)
+                        velocity_scale=velocity_scale, enable_bw=True)
   ccplanner.set_query(ccquery)
   res = ccplanner.solve(timeout=20)
 

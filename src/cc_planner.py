@@ -121,7 +121,7 @@ class CCConfig(object):
     @type  SE3_config: SE3Config
     @param SE3_config: Configuration of the manipulated object.
     """
-    self.q_robots   = q_robots
+    self.q_robots   = np.array(q_robots)
     self.SE3_config = SE3_config
 
 
@@ -1280,14 +1280,9 @@ class CCPlanner(object):
              -  timestamps:    Timestamps for time parameterization of
                                {bimanual_wpts}.
     """
-    passed, bimanual_wpts, timestamps = self.bimanual_obj_tracker.plan(
-      lie_traj, translation_traj, self.bimanual_T_rel, ref_sols,
-      self._query.discr_timestep, self._query.discr_check_timestep, 
-      direction)
-    if not passed:
-      return False, [], []
-
-    return True, bimanual_wpts, timestamps
+    return self.bimanual_obj_tracker.plan(lie_traj, translation_traj,
+            self.bimanual_T_rel, ref_sols, self._query.discr_timestep,
+            self._query.discr_check_timestep, direction)
 
   def _nearest_neighbor_indices(self, SE3_config, treetype):
     """
@@ -1570,6 +1565,7 @@ class BimanualObjectTracker(object):
     self._debug   = debug
     self._nrobots = len(robots)
     self._vmax    = robots[0].GetDOFVelocityLimits()[0:self._ndof]
+    self._jmin    = robots[0].GetDOFLimits()[0][0:self._ndof]
     self._jmax    = robots[0].GetDOFLimits()[1][0:self._ndof]
     self._maxiter = 8
     self._weight  = 10.
@@ -1782,7 +1778,7 @@ class BimanualObjectTracker(object):
       q = q + q_delta
 
       # Ensure IK solution returned is within joint position limit
-      q = np.maximum(np.minimum(q, self._jmax), -self._jmax)
+      q = np.maximum(np.minimum(q, self._jmax), self._jmin)
 
       cur_objective = self._compute_objective(robot_index, target_pose, q)
       if cur_objective < self._tol:

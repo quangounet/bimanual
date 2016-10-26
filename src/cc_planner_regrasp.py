@@ -1091,8 +1091,8 @@ class CCPlanner(object):
           self.robots[i].SetActiveDOFValues(v_test.config.q_robots_nominal[i])
           sleep(0.01)
           self._output_info('Planning regrasping......')
-          bimanual_regrasp_traj[i] = self.basemanips[i].MoveActiveJoints(
-            goal=bimanual_wpts[i][0], outputtrajobj=True, execute=False)
+          # bimanual_regrasp_traj[i] = self.basemanips[i].MoveActiveJoints(
+          #   goal=bimanual_wpts[i][0], outputtrajobj=True, execute=False)
           self.loose_gripper(self._query)
 
       # Now the connection is successful
@@ -1125,7 +1125,7 @@ class CCPlanner(object):
     status = TRAPPED
     for index in nnindices:
       v_near = self._query.tree_start[index]
-      
+    
       # quaternion
       q_end  = v_test.config.SE3_config.q
       qd_end = v_test.config.SE3_config.qd
@@ -1181,9 +1181,9 @@ class CCPlanner(object):
           self.robots[i].SetActiveDOFValues(bimanual_wpts[i][-1])
           self._output_info('Planning regrasping......')
           sleep(0.01)          
-          bimanual_regrasp_traj[i] = self.basemanips[i].MoveActiveJoints(
-            goal=v_test.config.q_robots_nominal[i], outputtrajobj=True, 
-            execute=False)
+          # bimanual_regrasp_traj[i] = self.basemanips[i].MoveActiveJoints(
+          #   goal=v_test.config.q_robots_nominal[i], outputtrajobj=True, 
+          #   execute=False)
           self.loose_gripper(self._query)
 
       # Now the connection is successful

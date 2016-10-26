@@ -1107,7 +1107,7 @@ class CCPlanner(object):
     status = TRAPPED
     for index in nnindices:
       v_near = self._query.tree_start[index]
-      
+
       # quaternion
       q_end  = v_test.config.SE3_config.q
       qd_end = v_test.config.SE3_config.qd

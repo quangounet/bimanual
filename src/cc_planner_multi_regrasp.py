@@ -19,6 +19,8 @@ REACHED     = 0
 ADVANCED    = 1
 TRAPPED     = 2
 NEEDREGRASP = 3
+FROMEXTEND  = 0
+FROMCONNECT = 1
 
 IK_CHECK_COLLISION = orpy.IkFilterOptions.CheckEnvCollisions
 IK_IGNORE_COLLISION = orpy.IkFilterOptions.IgnoreSelfCollisions
@@ -728,6 +730,7 @@ class CCPlanner(object):
     self._query.running_time += elasped_time
 
     reextend = False
+    reextend_type = None
     reextend_info = None
 
     while (t < timeout):
@@ -735,32 +738,50 @@ class CCPlanner(object):
 
       if reextend:
         SE3_config = SE3Config.from_matrix(reextend_info[3])
+        if reextend_type == FROMCONNECT:
+          self._query.iteration_count += 1
+          self._output_debug(
+            'Iteration no. {0} (try extension from interuptted connect)'.format(self._query.iteration_count), 'blue')
+        elif reextend_type == FROMEXTEND:
+          self._output_debug(
+            'Iteration no. {0} (retry extension from interuptted extend)'.format(self._query.iteration_count), 'blue')
       else:
         self._query.iteration_count += 1
-        self._output_debug('Iteration no. {0}'.format(
+        self._output_debug('Iteration no. {0} (start new extension)'.format(
                             self._query.iteration_count), 'blue')
         SE3_config = self.sample_SE3_config()
 
       res = self._extend(SE3_config, reextend=reextend, 
                          reextend_info=reextend_info)
       if len(res) == 1:
-        status = res
+        status = res[0]
         if status != TRAPPED:
           self._output_debug('Tree start : {0}; Tree end : {1}'.format(len(self._query.tree_start.vertices), len(self._query.tree_end.vertices)), 'green')
 
-          if (self._connect() == REACHED):
-            t_end = time()
-            self._query.running_time += (t_end - t_begin)
-            self._output_info('Path found. Iterations: {0}. Running time: {1}s.'.format(self._query.iteration_count, self._query.running_time), 'green')
-            self._query.solved = True
-            self._query.generate_final_cctraj()
-            self.reset_config(self._query)
-            return True
-        reextend = False
+          res = self._connect()
+          if len(res) == 1:
+            status = res[0]
+            if status == REACHED:
+              t_end = time()
+              self._query.running_time += (t_end - t_begin)
+              self._output_info('Path found. Iterations: {0}. Running time: {1}s.'.format(self._query.iteration_count, self._query.running_time), 'green')
+              self._query.solved = True
+              self._query.generate_final_cctraj()
+              self.reset_config(self._query)
+              return True
+            reextend = False
+          else:
+            robot_index, q_new, q_robots_orig, T_obj_orig = res[1]
+            nearest_index = res[2]
+            reextend = True
+            reextend_type = FROMCONNECT
+            reextend_info = (robot_index, q_new, q_robots_orig, 
+                             T_obj_orig, nearest_index)
       else:
         robot_index, q_new, q_robots_orig, T_obj_orig = res[1]
         nearest_index = res[2] 
         reextend = True
+        reextend_type = FROMEXTEND
         reextend_info = (robot_index, q_new, q_robots_orig, 
                          T_obj_orig, nearest_index)
         
@@ -828,6 +849,7 @@ class CCPlanner(object):
     if reextend:
       nnindices = (reextend_info[4],)
     for index in nnindices:
+      self._output_debug('index:{0}, nnindices:{1}'.format(index, nnindices))
       v_near = self._query.tree_start[index]
       
       q_beg  = v_near.config.SE3_config.q
@@ -926,10 +948,13 @@ class CCPlanner(object):
           q_robots_pr = np.array(new_q_robots) # post regrasp configs
           q_robots_pr[reextend_info[0]] = reextend_info[1]
           v_new.add_regrasp({0: None, 1: None}, q_robots_pr)
+          self._output_info('Adding regrasping-----', 'yellow')
 
         self._query.tree_start.add_vertex(v_new, v_near.index, rot_traj, translation_traj, bimanual_wpts, timestamps)
         return status,
       else:
+        self._output_debug('TRAPPED : SE(3) trajectory need regrasping', 
+                           bold=False)
         status = NEEDREGRASP
         return status, res[1:], index
     return status,
@@ -953,6 +978,7 @@ class CCPlanner(object):
     if reextend:
       nnindices = (reextend_info[4],)
     for index in nnindices:
+      self._output_debug('index:{0}, nnindices:{1}'.format(index, nnindices))
       v_near = self._query.tree_end[index]
       
       # quaternion
@@ -1052,10 +1078,13 @@ class CCPlanner(object):
           q_robots_pr = np.array(new_q_robots) # post regrasp configs
           q_robots_pr[reextend_info[0]] = reextend_info[1]
           v_new.add_regrasp({0: None, 1: None}, q_robots_pr)
+          self._output_info('Adding regrasping-----', 'yellow')
 
         self._query.tree_end.add_vertex(v_new, v_near.index, rot_traj, translation_traj, bimanual_wpts, timestamps)
         return status,
       else:
+        self._output_debug('TRAPPED : SE(3) trajectory need regrasping', 
+                           bold=False)
         status = NEEDREGRASP
         return status, res[1:], index
     return status,
@@ -1143,12 +1172,12 @@ class CCPlanner(object):
         for i in xrange(2):
           if not utils.distance(v_test.config.q_robots_nominal[i], 
                     bimanual_wpts[i][0]) < eps:
-            self._output_info('IK discrepancy (robot {0})'.format(i), 
+            self._output_debug('IK discrepancy (robot {0})'.format(i), 
                               bold=False)
             self.robots[i].SetDOFValues([0], [self.manips[i].GetArmDOF()])
             self.robots[i].SetActiveDOFValues(v_test.config.q_robots_nominal[i])
             sleep(0.01)
-            self._output_info('Planning regrasping......')
+            self._output_debug('Planning regrasping......')
             # bimanual_regrasp_traj[i] = self.basemanips[i].MoveActiveJoints(
             #   goal=bimanual_wpts[i][0], outputtrajobj=True, execute=False)
             self.loose_gripper(self._query)
@@ -1157,18 +1186,21 @@ class CCPlanner(object):
         v_test.remove_regrasp() # remove possible existing regrasp action
         v_test.add_regrasp(bimanual_regrasp_traj, 
                            [bimanual_wpts[0][0], bimanual_wpts[1][0]])
+        self._output_info('Adding regrasping-----', 'yellow')
         self._query.tree_end.vertices.append(v_near)
         self._query.connecting_rot_traj         = rot_traj
         self._query.connecting_translation_traj = translation_traj
         self._query.connecting_bimanual_wpts    = bimanual_wpts
         self._query.connecting_timestamps       = timestamps
         status = REACHED
-        return status
+        return status,
       else:
-        continue
-        print 'connect_fw'
-        embed()
-    return status        
+        self._output_debug('TRAPPED : SE(3) trajectory need regrasping', 
+                           bold=False)
+        # continue
+        status = NEEDREGRASP
+        return status, res[1:], index
+    return status,        
 
 
   def _connect_bw(self):
@@ -1236,11 +1268,11 @@ class CCPlanner(object):
         for i in xrange(2):
           if not utils.distance(v_test.config.q_robots_nominal[i], 
                     bimanual_wpts[i][-1]) < eps:
-            self._output_info(
-              'IK discrepancy (robot {0})'.format(i), bold=False)
+            self._output_debug('IK discrepancy (robot {0})'.format(i), 
+                               bold=False)
             self.robots[i].SetDOFValues([0], [self.manips[i].GetArmDOF()])
             self.robots[i].SetActiveDOFValues(bimanual_wpts[i][-1])
-            self._output_info('Planning regrasping......')
+            self._output_debug('Planning regrasping......')
             sleep(0.01)          
             # bimanual_regrasp_traj[i] = self.basemanips[i].MoveActiveJoints(
             #   goal=v_test.config.q_robots_nominal[i], outputtrajobj=True, execute=False)
@@ -1250,18 +1282,22 @@ class CCPlanner(object):
         v_test.remove_regrasp() # remove possible existing regrasp action
         v_test.add_regrasp(bimanual_regrasp_traj,
                            [bimanual_wpts[0][-1], bimanual_wpts[1][-1]])
+        self._output_info('Adding regrasping-----', 'yellow')
+
         self._query.tree_start.vertices.append(v_near)
         self._query.connecting_rot_traj         = rot_traj
         self._query.connecting_translation_traj = translation_traj
         self._query.connecting_bimanual_wpts    = bimanual_wpts
         self._query.connecting_timestamps       = timestamps
         status = REACHED
-        return status
+        return status,
       else:
-        continue
-        print 'connect_bw'
-        embed()
-    return status        
+        self._output_debug('TRAPPED : SE(3) trajectory need regrasping', 
+                           bold=False)
+        # continue
+        status = NEEDREGRASP
+        return status, res[1:], index
+    return status,        
 
   
   def is_collision_free_SE3_config(self, SE3_config):
@@ -1430,6 +1466,8 @@ class CCPlanner(object):
       sleep(refresh_step)
 
   def visualize_regrasp_traj(self, bimanual_traj, speed=1.0):
+    sleep(0.5)
+    return
     sampling_step = 0.01
     refresh_step  = sampling_step / speed
 
@@ -1881,6 +1919,7 @@ class BimanualObjectTracker(object):
     for i in xrange(self._nrobots):
       for j in xrange(self._ndof):
         if abs(q_robots[i][j] - q_robots_prev[i][j]) > self._jd_max[j]:
+          self._output_debug('Move too FFFAASSSTTTT', 'red')
           return False
 
     # Update environment for collision checking
@@ -1932,12 +1971,15 @@ class BimanualObjectTracker(object):
     if not reached:
       self._output_debug('Max iteration ({0}) exceeded.'.format(self._maxiter), 'red')
       if not self._reach_joint_limit(q): # reach manifold boundry
+        self._output_debug('stop NOT by joint limit', 'red')
         return False, None
 
+      self._output_debug('stop IS by joint limit', 'green')
       self.obj.Enable(False) # TODO: this is not accurate
       manip = self.manips[robot_index]
       if manip.FindIKSolution(T, IK_CHECK_COLLISION) is None:
         self.obj.Enable(True) # TODO: this is not accurate
+        self._output_debug('No other IK solutions', 'yellow')
         return False, None
 
       T_cur = utils.compute_endeffector_transform(manip, q)
@@ -1960,6 +2002,7 @@ class BimanualObjectTracker(object):
           cur_objective = self._compute_objective(robot_index, orig_pose, q)
           if cur_objective < self._tol:
             return True, q # back to original transformation with a new q
+      self._output_debug('No other free IK solutions', 'yellow')
       return False, None
 
     return False, q

@@ -711,27 +711,35 @@ class CCPlanner(object):
     t = 0.0
     prev_iter = self._query.iteration_count
     
+    reextend = False
+    reextend_type = None
+    reextend_info = None
+
     t_begin = time()
-    if (self._connect() == REACHED):
-      self._query.iteration_count += 1
-      t_end = time()
-      self._query.running_time += (t_end - t_begin)
-      
-      self._output_info('Path found. Iterations: {0}. Running time: {1}s.'
-                        .format(self._query.iteration_count, 
-                        self._query.running_time), 'green')
-      self._query.solved = True
-      self._query.generate_final_cctraj()
-      self.reset_config(self._query)
-      return True
+    res = self._connect()
+    if len(res) == 1:
+      status = res[0]
+      if status == REACHED:
+        self._query.iteration_count += 1
+        t_end = time()
+        self._query.running_time += (t_end - t_begin)
+        self._output_info('Path found. Iterations: {0}. Running time: {1}s.'.format(self._query.iteration_count, self._query.running_time), 'green')
+        self._query.solved = True
+        self._query.generate_final_cctraj()
+        self.reset_config(self._query)
+        return True
+      reextend = False
+    else:
+      robot_index, q_new, q_robots_orig, T_obj_orig = res[1]
+      nearest_index = res[2]
+      reextend = True
+      reextend_type = FROMCONNECT
+      reextend_info = (robot_index, q_new, q_robots_orig, 
+                       T_obj_orig, nearest_index)
 
     elasped_time = time() - t_begin
     t += elasped_time
     self._query.running_time += elasped_time
-
-    reextend = False
-    reextend_type = None
-    reextend_info = None
 
     while (t < timeout):
       t_begin = time()
@@ -948,7 +956,7 @@ class CCPlanner(object):
           q_robots_pr = np.array(new_q_robots) # post regrasp configs
           q_robots_pr[reextend_info[0]] = reextend_info[1]
           v_new.add_regrasp({0: None, 1: None}, q_robots_pr)
-          self._output_info('Adding regrasping-----', 'yellow')
+          self._output_info('Adding regrasping', 'yellow')
 
         self._query.tree_start.add_vertex(v_new, v_near.index, rot_traj, translation_traj, bimanual_wpts, timestamps)
         return status,
@@ -1078,7 +1086,7 @@ class CCPlanner(object):
           q_robots_pr = np.array(new_q_robots) # post regrasp configs
           q_robots_pr[reextend_info[0]] = reextend_info[1]
           v_new.add_regrasp({0: None, 1: None}, q_robots_pr)
-          self._output_info('Adding regrasping-----', 'yellow')
+          self._output_info('Adding regrasping', 'yellow')
 
         self._query.tree_end.add_vertex(v_new, v_near.index, rot_traj, translation_traj, bimanual_wpts, timestamps)
         return status,
@@ -1186,7 +1194,7 @@ class CCPlanner(object):
         v_test.remove_regrasp() # remove possible existing regrasp action
         v_test.add_regrasp(bimanual_regrasp_traj, 
                            [bimanual_wpts[0][0], bimanual_wpts[1][0]])
-        self._output_info('Adding regrasping-----', 'yellow')
+        self._output_info('Adding regrasping', 'yellow')
         self._query.tree_end.vertices.append(v_near)
         self._query.connecting_rot_traj         = rot_traj
         self._query.connecting_translation_traj = translation_traj
@@ -1282,7 +1290,7 @@ class CCPlanner(object):
         v_test.remove_regrasp() # remove possible existing regrasp action
         v_test.add_regrasp(bimanual_regrasp_traj,
                            [bimanual_wpts[0][-1], bimanual_wpts[1][-1]])
-        self._output_info('Adding regrasping-----', 'yellow')
+        self._output_info('Adding regrasping', 'yellow')
 
         self._query.tree_start.vertices.append(v_near)
         self._query.connecting_rot_traj         = rot_traj

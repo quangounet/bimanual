@@ -11,7 +11,7 @@ from utils import utils
 
 if __name__ == "__main__":
   # Generic configuration
-  np.set_printoptions(precision=10, suppress=True)
+  np.set_printoptions(precision=5, suppress=True)
   
   # Load OpenRAVE environment
   scene_file = '../xml/worlds/bimanual_setup.env.xml'
@@ -86,9 +86,11 @@ if __name__ == "__main__":
 
   embed()
   exit(0)
-  import cc_planner_multi_regrasp_reach as ccp
+  import cc_planner_multi_regrasp as ccp # ~4.0
+  import cc_planner_multi_regrasp_1 as ccp #0.1: 4.4
+  import cc_planner_multi_regrasp_2 as ccp
 
-  rep = 1
+  rep = 50
   from time import time
   ccplanner = ccp.CCPlanner(Lshape, [left_robot, right_robot], debug=False)
   t = time() 
@@ -100,6 +102,7 @@ if __name__ == "__main__":
     res = ccplanner.solve(timeout=20)
   print (time()-t)/rep
 
+  ccplanner.bimanual_obj_tracker.ttt
   ccplanner.visualize_cctraj(ccquery.cctraj, speed=1)
   # ccplanner.shortcut(ccquery, maxiter=20)
   # ccplanner.visualize_cctraj(ccquery.cctraj, speed=1)

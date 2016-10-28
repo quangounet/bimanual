@@ -1,6 +1,7 @@
 """
 Closed-chain motion planner with multiple regrasping for bimaual setup.
 This version is based on RRT-connect structure.
+This variation uses available room for extension along jacobian as scoreing function.
 """
 
 import openravepy as orpy
@@ -603,18 +604,10 @@ class CCPlanner(object):
     self.manips = []
     self.basemanips = []
     self.taskmanips = []
-    self.kdtrees = []
-    self.robot_translations = []
     for (i, robot) in enumerate(self.robots):
       self.manips.append(robot.GetActiveManipulator())
       self.basemanips.append(orpy.interfaces.BaseManipulation(robot))
       self.taskmanips.append(orpy.interfaces.TaskManipulation(robot))
-      self._output_info('Generating rechability trees for robot {0}'.format(robot.GetName()))
-      rmodel = orpy.databases.kinematicreachability.ReachabilityModel(robot)
-      if not rmodel.load():
-        rmodel.autogenerate()
-      self.kdtrees.append(rmodel.ComputeNN())
-      self.robot_translations.append(robot.GetTransform()[:3,3])
       robot.SetActiveDOFs(self.manips[i].GetArmIndices())
 
     self.bimanual_obj_tracker = BimanualObjectTracker(self.robots, manip_obj, debug=self._debug)
@@ -624,8 +617,6 @@ class CCPlanner(object):
     self._amax = self.robots[0].GetDOFAccelerationLimits()[self._active_dofs]
 
     self.env = self.obj.GetEnv()
-    self.ttt1 = 0
-    self.ttt2 = 0
 
   def sample_SE3_config(self):
     """
@@ -1564,30 +1555,18 @@ class CCPlanner(object):
     @rtype:  bool
     @return: B{True} if the IK solutions for both robots exist.
     """
-    t = time()
     with self.env:
       self.obj.SetTransform(SE3_config.T)      
       self._enable_robots_collision(False)
 
       for i in xrange(2):
         T_gripper = np.dot(SE3_config.T, self.bimanual_T_rel[i])
-        pose = orpy.poseFromMatrix(T_gripper)
-        pose[4:] -= self.robot_translations[i]
-        pose[4:] *= self.kdtrees[i].transmult
-        dist = self.kdtrees[i].nnposes.kSearch(pose, 1, 0)[1][0]
-        if dist > 0.25:
-          self._enable_robots_collision()
-          self.ttt1 += time()-t
-          return False
         self.robots[i].Enable(True)
         sol = self.manips[i].FindIKSolution(T_gripper, IK_CHECK_COLLISION)
         if sol is None:
           self._enable_robots_collision()
-          self.ttt1 += time()-t
           return False
 
-    self._enable_robots_collision()
-    self.ttt1 += time()-t
     return True
 
   def check_SE3_traj_reachability(self, lie_traj, translation_traj,
@@ -2194,7 +2173,8 @@ class BimanualObjectTracker(object):
 
       T_cur = utils.compute_endeffector_transform(manip, q)
       sorted_sols = self._sort_IK(manip.FindIKSolutions(T_cur, 
-                                  IK_CHECK_COLLISION))
+                                  IK_CHECK_COLLISION), robot_index,
+                                  target_pose)
       self.obj.Enable(True) # TODO: this is not accurate
 
       # try to go back with new IK class
@@ -2217,7 +2197,7 @@ class BimanualObjectTracker(object):
 
     return False, q
 
-  def _sort_IK(self, sols):
+  def _sort_IK(self, sols, robot_index, target_pose):
     """
     Return a sorted list of IK solutions according to their scores.
     """
@@ -2226,7 +2206,10 @@ class BimanualObjectTracker(object):
     for sol in sols:
       if not self._reach_joint_limit(sol): # remove IK at joint limit
         feasible_IKs.append(sol)
-        scores.append(np.dot(self._jmax - sol, sol - self._jmin))
+        q_delta  = self._compute_q_delta(robot_index, target_pose, sol)
+        score = np.min(np.maximum((self._jmax - sol)/q_delta, 0)
+                     + np.maximum((self._jmin - sol)/q_delta, 0))
+        scores.append(score)
     sorted_IKs = np.array(feasible_IKs)[np.array(scores).argsort()[::-1]]
     return sorted_IKs
 

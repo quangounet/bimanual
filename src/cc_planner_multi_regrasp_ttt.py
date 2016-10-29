@@ -1,6 +1,7 @@
 """
 Closed-chain motion planner with multiple regrasping for bimaual setup.
 This version is based on RRT-connect structure.
+for testing when to stop diff IK.
 """
 
 import openravepy as orpy
@@ -2169,8 +2170,10 @@ class BimanualObjectTracker(object):
       q_delta = self._compute_q_delta(robot_index, target_pose, q)
       q = q + q_delta
 
-      # Ensure IK solution returned is within joint position limit
-      q = np.maximum(np.minimum(q, self._jmax), self._jmin)
+      # break once exceeds limit
+      if (q > self._jmax).any() or (q < self._jmin).any():
+        q = np.maximum(np.minimum(q, self._jmax), self._jmin)
+        break
 
       cur_objective = self._compute_objective(robot_index, target_pose, q)
       if cur_objective < self._tol:

@@ -1,6 +1,7 @@
 """
 Closed-chain motion planner with multiple regrasping for bimaual setup.
 This version is based on RRT-connect structure.
+This variation uses available room for extension along jacobian as scoring function. It stops iteration for Ik computation once hit boundary.
 """
 
 import openravepy as orpy
@@ -226,7 +227,7 @@ class CCTree(object):
     v_new.timestamps       = timestamps
     v_new.index            = self.length
     v_new.level            = self.vertices[parent_index].level + 1
-
+    
     if v_new.contain_regrasp:
       v_new.regrasp_count = self.vertices[parent_index].regrasp_count + 1
     else:
@@ -2169,8 +2170,10 @@ class BimanualObjectTracker(object):
       q_delta = self._compute_q_delta(robot_index, target_pose, q)
       q = q + q_delta
 
-      # Ensure IK solution returned is within joint position limit
-      q = np.maximum(np.minimum(q, self._jmax), self._jmin)
+      # break once exceeds limit
+      if (q > self._jmax).any() or (q < self._jmin).any():
+        q = np.maximum(np.minimum(q, self._jmax), self._jmin)
+        break
 
       cur_objective = self._compute_objective(robot_index, target_pose, q)
       if cur_objective < self._tol:
@@ -2192,7 +2195,8 @@ class BimanualObjectTracker(object):
 
       T_cur = utils.compute_endeffector_transform(manip, q)
       sorted_sols = self._sort_IK(manip.FindIKSolutions(T_cur, 
-                                  IK_CHECK_COLLISION))
+                                  IK_CHECK_COLLISION), robot_index,
+                                  target_pose)
       self.obj.Enable(True) # TODO: this is not accurate
 
       # try to go back with new IK class
@@ -2215,7 +2219,7 @@ class BimanualObjectTracker(object):
 
     return False, q
 
-  def _sort_IK(self, sols):
+  def _sort_IK(self, sols, robot_index, target_pose):
     """
     Return a sorted list of IK solutions according to their scores.
     """
@@ -2224,7 +2228,11 @@ class BimanualObjectTracker(object):
     for sol in sols:
       if not self._reach_joint_limit(sol): # remove IK at joint limit
         feasible_IKs.append(sol)
-        scores.append(np.dot(self._jmax - sol, sol - self._jmin))
+        q_delta  = self._compute_q_delta(robot_index, target_pose, sol)
+        q_delta = np.where(q_delta, q_delta, 1e-10)          
+        score = np.min(np.maximum((self._jmax - sol)/q_delta, 0)
+                     + np.maximum((self._jmin - sol)/q_delta, 0))
+        scores.append(score)
     sorted_IKs = np.array(feasible_IKs)[np.array(scores).argsort()[::-1]]
     return sorted_IKs
 

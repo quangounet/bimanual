@@ -11,12 +11,12 @@ from utils import utils
 
 if __name__ == "__main__":
   # Generic configuration
-  np.set_printoptions(precision=5, suppress=True)
+  np.set_printoptions(precision=10, suppress=True)
   
   # Load OpenRAVE environment
   scene_file = '../xml/worlds/bimanual_setup.env.xml'
   env = orpy.Environment()
-  env.SetViewer('qtcoin')
+  # env.SetViewer('qtcoin')
   env.Load(scene_file)
 
   # Retrive robot and objects
@@ -86,26 +86,56 @@ if __name__ == "__main__":
 
   embed()
   exit(0)
-  import cc_planner_multi_regrasp as ccp # ~4.0
-  import cc_planner_multi_regrasp_1 as ccp #0.1: 4.4
+  import cc_planner_multi_regrasp as ccp 
+  import cc_planner_multi_regrasp_1 as ccp
+  import cc_planner_multi_regrasp_1_jac as ccp
   import cc_planner_multi_regrasp_2 as ccp
+  import cc_planner_multi_regrasp_3 as ccp
+  import cc_planner_multi_regrasp_ttt as ccp
+  import cc_planner_multi_regrasp_2_5 as ccp
 
-  rep = 50
+  ccplanner = ccp.CCPlanner(Lshape, [left_robot, right_robot], debug=False)
+  ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, 
+                        q_robots_goal, q_robots_grasp, T_obj_start, nn=2, 
+                        step_size=0.5, regrasp_limits=[1, 1])
+  ccplanner.set_query(ccquery)
+  res = ccplanner.solve(timeout=10)
+
+  rep = 20
   from time import time
   ccplanner = ccp.CCPlanner(Lshape, [left_robot, right_robot], debug=False)
   t = time() 
-  for i in xrange(rep):
-    ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, q_robots_goal,
-                          q_robots_grasp, T_obj_start, nn=2, step_size=0.5,
-                          enable_bw=True)
+  i = 0
+  while i < rep:
+    ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, 
+                          q_robots_goal, q_robots_grasp, T_obj_start, nn=2, 
+                          step_size=0.5, regrasp_limits=[1, 1])
     ccplanner.set_query(ccquery)
-    res = ccplanner.solve(timeout=20)
+    res = ccplanner.solve(timeout=50)
+    if res:
+      i += 1
   print (time()-t)/rep
 
-  ccplanner.bimanual_obj_tracker.ttt
   ccplanner.visualize_cctraj(ccquery.cctraj, speed=1)
   # ccplanner.shortcut(ccquery, maxiter=20)
   # ccplanner.visualize_cctraj(ccquery.cctraj, speed=1)
 
+"""
+------
+cc_planner_multi_regrasp    4.0s,       6700K: 2.71s
+cc_planner_multi_regrasp_1  0.1: 4.4s
+------
+cc_planner_multi_regrasp    6700K: 2.71s
+cc_planner_multi_regrasp_2  6700K: 2.92s
+------
+cc_planner_multi_regrasp    6700K: [1, 1]: 4.52s
+cc_planner_multi_regrasp_2  6700K: [1, 1]: 5.24s
+cc_planner_multi_regrasp_3  6700K: [1, 1]: 4.56s
+------
+cc_planner_multi_regrasp       6700K: [1, 1]: timeout50s: 4.3758 (1 restart)
+cc_planner_multi_regrasp_ttt   6700K: [1, 1]: timeout50s: 3.9224 (0 restart)
+cc_planner_multi_regrasp_2     6700K: [1, 1]: timeout50s: 6.1169 (0 restart)
+cc_planner_multi_regrasp_2_ttt 6700K: [1, 1]: timeout50s: 6.0749 (1 restart)
+cc_planner_multi_regrasp_2_5   6700K: [1, 1]: timeout50s: 5.1056 (1 restart)
 
-
+"""

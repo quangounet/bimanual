@@ -1,6 +1,7 @@
 """
 Closed-chain motion planner with multiple regrasping for bimaual setup.
 This version is based on RRT-connect structure.
+This variation uses available room for extension along jacobian (to real target) as scoring function.
 """
 
 import openravepy as orpy
@@ -226,7 +227,7 @@ class CCTree(object):
     v_new.timestamps       = timestamps
     v_new.index            = self.length
     v_new.level            = self.vertices[parent_index].level + 1
-
+    
     if v_new.contain_regrasp:
       v_new.regrasp_count = self.vertices[parent_index].regrasp_count + 1
     else:
@@ -2003,6 +2004,13 @@ class BimanualObjectTracker(object):
       T_obj_prev[0:3, 0:3] = lie_traj.EvalRotation(t_prev)
       T_obj_prev[0:3, 3] = translation_traj.Eval(t_prev)
 
+      T_obj_final = np.eye(4)
+      T_obj_final[0:3, 0:3] = lie_traj.EvalRotation(duration)
+      T_obj_final[0:3, 3] = translation_traj.Eval(duration)
+      bimanual_T_gripper_final = []
+      for i in xrange(self._nrobots):
+        bimanual_T_gripper_final.append(np.dot(T_obj_final, bimanual_T_rel[i]))
+
       T_obj = np.eye(4)
       for t in np.append(utils.arange(discr_check_timestep, duration, 
                          discr_check_timestep), duration):
@@ -2016,7 +2024,8 @@ class BimanualObjectTracker(object):
         q_robots_new = []
         for i in xrange(self._nrobots):
           need_regrasp, q_sol = self._compute_IK(i, bimanual_T_gripper[i],
-                                                 q_robots_prev[i])
+                                                 q_robots_prev[i], 
+                                                 bimanual_T_gripper_final[i])
           if q_sol is None:
             return False, False, [], []
 
@@ -2065,6 +2074,13 @@ class BimanualObjectTracker(object):
       T_obj_prev[0:3, 0:3] = lie_traj.EvalRotation(t_prev)
       T_obj_prev[0:3, 3] = translation_traj.Eval(t_prev)
 
+      T_obj_final = np.eye(4)
+      T_obj_final[0:3, 0:3] = lie_traj.EvalRotation(0)
+      T_obj_final[0:3, 3] = translation_traj.Eval(0)
+      bimanual_T_gripper_final = []
+      for i in xrange(self._nrobots):
+        bimanual_T_gripper_final.append(np.dot(T_obj_final, bimanual_T_rel[i]))
+
       T_obj = np.eye(4)
       for t in np.append(utils.arange(duration-discr_check_timestep, 0, 
                                       -discr_check_timestep), 0):
@@ -2078,7 +2094,8 @@ class BimanualObjectTracker(object):
         q_robots_new = []
         for i in xrange(self._nrobots):
           need_regrasp, q_sol = self._compute_IK(i, bimanual_T_gripper[i],
-                                                 q_robots_prev[i])
+                                                 q_robots_prev[i], 
+                                                 bimanual_T_gripper_final[i])
           if q_sol is None:
             return False, False, [], []
 
@@ -2142,7 +2159,7 @@ class BimanualObjectTracker(object):
 
     return True
 
-  def _compute_IK(self, robot_index, T, q):
+  def _compute_IK(self, robot_index, T, q, T_final):
     """    
     Return an IK solution for a robot reaching an end-effector transformation
     using differential IK.
@@ -2163,6 +2180,12 @@ class BimanualObjectTracker(object):
     target_pose = np.hstack([orpy.quatFromRotationMatrix(R), p])
     if target_pose[0] < 0:
       target_pose[0:4] *= -1.
+
+    R_final = T_final[0:3, 0:3]
+    p_final = T_final[0:3, 3]
+    target_pose_final = np.hstack([orpy.quatFromRotationMatrix(R_final), p_final])
+    if target_pose_final[0] < 0:
+      target_pose_final[0:4] *= -1.
 
     reached = False
     for i in xrange(self._maxiter):
@@ -2192,7 +2215,8 @@ class BimanualObjectTracker(object):
 
       T_cur = utils.compute_endeffector_transform(manip, q)
       sorted_sols = self._sort_IK(manip.FindIKSolutions(T_cur, 
-                                  IK_CHECK_COLLISION))
+                                  IK_CHECK_COLLISION), robot_index,
+                                  target_pose_final)
       self.obj.Enable(True) # TODO: this is not accurate
 
       # try to go back with new IK class
@@ -2215,7 +2239,7 @@ class BimanualObjectTracker(object):
 
     return False, q
 
-  def _sort_IK(self, sols):
+  def _sort_IK(self, sols, robot_index, target_pose):
     """
     Return a sorted list of IK solutions according to their scores.
     """
@@ -2224,7 +2248,11 @@ class BimanualObjectTracker(object):
     for sol in sols:
       if not self._reach_joint_limit(sol): # remove IK at joint limit
         feasible_IKs.append(sol)
-        scores.append(np.dot(self._jmax - sol, sol - self._jmin))
+        q_delta  = self._compute_q_delta(robot_index, target_pose, sol)
+        q_delta = np.where(q_delta, q_delta, 1e-10)          
+        score = np.min(np.maximum((self._jmax - sol)/q_delta, 0)
+                     + np.maximum((self._jmin - sol)/q_delta, 0))
+        scores.append(score)
     sorted_IKs = np.array(feasible_IKs)[np.array(scores).argsort()[::-1]]
     return sorted_IKs
 

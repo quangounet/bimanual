@@ -95,6 +95,13 @@ if __name__ == "__main__":
   ccplanner.set_query(ccquery)
   res = ccplanner.solve(timeout=20)
 
+  import cc_planner_multi_regrasp as ccp 
+  ccplanner = ccp.CCPlanner(Lshape, [left_robot, right_robot], debug=False)
+  ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, 
+                        q_robots_goal, q_robots_grasp, T_obj_start, nn=2, 
+                        step_size=0.2, regrasp_limits=[0, 0])
+  ccplanner.set_query(ccquery)
+  res = ccplanner.solve(timeout=20)
 
   ccplanner.visualize_cctraj(ccquery.cctraj, speed=1)
   # ccplanner.shortcut(ccquery, maxiter=20)

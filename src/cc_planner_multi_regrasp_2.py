@@ -1,7 +1,7 @@
 """
 Closed-chain motion planner with multiple regrasping for bimaual setup.
 This version is based on RRT-connect structure.
-This variation uses available room for extension along jacobian as scoreing function.
+This variation uses available room for extension along jacobian as scoring function.
 """
 
 import openravepy as orpy
@@ -145,6 +145,7 @@ class CCVertex(object):
     @param config: Configuration of the bimanual set-up in this vertex.
     """
     self.config = config
+    self.regrasp_count = 0
 
     # These parameters are to be assigned when the vertex is added to the tree
     self.index                 = 0
@@ -157,13 +158,14 @@ class CCVertex(object):
     self.contain_regrasp       = False
     self.bimanual_regrasp_traj = None
 
-  def remove_regrasp(self):
-    self.contain_regrasp = False
-    self.config.set_q_robots(self.config.q_robots_nominal)
-    self.bimanual_regrasp_traj = None
-
   def add_regrasp(self, bimanual_regrasp_traj, q_robots):
-    self.contain_regrasp = True
+    """
+    Add regrasp info to a vertex.
+    If the vertex contains regrasp already, replace it.
+    """
+    if not self.contain_regrasp:
+      self.contain_regrasp = True
+      self.regrasp_count += 1
     self.config.set_q_robots(q_robots)
     self.bimanual_regrasp_traj = bimanual_regrasp_traj   
 
@@ -226,6 +228,11 @@ class CCTree(object):
     v_new.index            = self.length
     v_new.level            = self.vertices[parent_index].level + 1
     
+    if v_new.contain_regrasp:
+      v_new.regrasp_count = self.vertices[parent_index].regrasp_count + 1
+    else:
+      v_new.regrasp_count    = self.vertices[parent_index].regrasp_count
+
     self.vertices.append(v_new)
     self.length += 1
 
@@ -370,8 +377,8 @@ class CCQuery(object):
   def __init__(self, obj_translation_limits, q_robots_start, q_robots_goal, 
                q_robots_grasp, T_obj_start, T_obj_goal=None, nn=-1, 
                step_size=0.7, velocity_scale=1, interpolation_duration=None, 
-               discr_timestep=5e-3, discr_check_timestep=None, 
-               enable_bw=False):
+               discr_timestep=5e-3, discr_check_timestep=None,
+               regrasp_limits=[5, 5]):
     """
     CCQuery constructor. It is independent of robots to be planned since robot
     info will be stored in planner itself.
@@ -426,8 +433,6 @@ class CCQuery(object):
                                    This needs to be multiple of 
                                    C{discr_timestep} for uniformity 
                                    uniformity in trajectory generated.
-    @type               enable_bw: bool
-    @param              enable_bw: B{True} to enable extension of C{tree_end}.
     """
     # Initialize v_start and v_goal
     SE3_config_start    = SE3Config.from_matrix(T_obj_start)
@@ -448,7 +453,8 @@ class CCQuery(object):
     self.interpolation_duration = interpolation_duration
     self.discr_timestep         = discr_timestep
     self.discr_check_timestep   = discr_check_timestep
-    self.enable_bw              = enable_bw
+    self.regrasp_limit_start    = regrasp_limits[0]
+    self.regrasp_limit_end      = regrasp_limits[1]
 
     if step_size < 0.1:
       raise CCPlannerException('step_size should not be less than 0.1')
@@ -833,7 +839,7 @@ class CCPlanner(object):
              -  B{ADVANCED}: when the tree is extended towards the given
                              config
     """
-    if (self._query.iteration_count - 1) % 2 == FW or not self._query.enable_bw:
+    if (self._query.iteration_count - 1) % 2 == FW:
       return self._extend_fw(SE3_config, reextend=reextend,
                              reextend_info=reextend_info)
     else:
@@ -958,11 +964,14 @@ class CCPlanner(object):
           q_robots_pr = np.array(new_q_robots) # post regrasp configs
           q_robots_pr[reextend_info[0]] = reextend_info[1]
           v_new.add_regrasp({0: None, 1: None}, q_robots_pr)
-          self._output_info('Adding regrasping', 'yellow')
+          self._output_debug('Adding regrasping', 'yellow')
 
         self._query.tree_start.add_vertex(v_new, v_near.index, rot_traj, translation_traj, bimanual_wpts, timestamps)
         return status,
       else:
+        if v_near.regrasp_count >= self._query.regrasp_limit_start:
+          status = TRAPPED
+          continue
         self._output_debug('TRAPPED : SE(3) trajectory need regrasping', 
                            bold=False)
         status = NEEDREGRASP
@@ -1088,11 +1097,14 @@ class CCPlanner(object):
           q_robots_pr = np.array(new_q_robots) # post regrasp configs
           q_robots_pr[reextend_info[0]] = reextend_info[1]
           v_new.add_regrasp({0: None, 1: None}, q_robots_pr)
-          self._output_info('Adding regrasping', 'yellow')
+          self._output_debug('Adding regrasping', 'yellow')
 
         self._query.tree_end.add_vertex(v_new, v_near.index, rot_traj, translation_traj, bimanual_wpts, timestamps)
         return status,
       else:
+        if v_near.regrasp_count >= self._query.regrasp_limit_end:
+          status = TRAPPED
+          continue
         self._output_debug('TRAPPED : SE(3) trajectory need regrasping', 
                            bold=False)
         status = NEEDREGRASP
@@ -1108,7 +1120,7 @@ class CCPlanner(object):
              -  B{TRAPPED}: connection successful
              -  B{REACHED}: connection failed
     """
-    if (self._query.iteration_count - 1) % 2 == FW or not self._query.enable_bw:
+    if (self._query.iteration_count - 1) % 2 == FW:
       # tree_start has just been extended
       return self._connect_fw()
     else:
@@ -1206,10 +1218,9 @@ class CCPlanner(object):
                 self.loose_gripper(self._query)
 
             # Now the connection is successful
-            v_test.remove_regrasp() # remove possible existing regrasp action
             v_test.add_regrasp(bimanual_regrasp_traj, 
                                [bimanual_wpts[0][0], bimanual_wpts[1][0]])
-            self._output_info('Adding regrasping', 'yellow')
+            self._output_debug('Adding regrasping', 'yellow')
             self._query.tree_end.vertices.append(v_near)
             self._query.connecting_rot_traj         = rot_traj
             self._query.connecting_translation_traj = translation_traj
@@ -1217,10 +1228,12 @@ class CCPlanner(object):
             self._query.connecting_timestamps       = timestamps
             status = REACHED
             return status,
-          else:
+          else: # need regrasp
+            if v_near.regrasp_count >= self._query.regrasp_limit_end:
+              status = TRAPPED
+              break
             self._output_debug('TRAPPED : SE(3) trajectory need regrasping', 
                                bold=False)
-            # continue
             status = NEEDREGRASP
             return status, res[1:], v_near.index
 
@@ -1295,7 +1308,10 @@ class CCPlanner(object):
                                             timestamps)
             v_near = v_new
 
-          else:
+          else: # need regrasp
+            if v_near.regrasp_count >= self._query.regrasp_limit_end:
+              status = TRAPPED
+              break
             self._output_debug('TRAPPED : SE(3) trajectory need regrasping', 
                                bold=False)
             status = NEEDREGRASP
@@ -1389,10 +1405,9 @@ class CCPlanner(object):
                 self.loose_gripper(self._query)
 
             # Now the connection is successful
-            v_test.remove_regrasp() # remove possible existing regrasp action
             v_test.add_regrasp(bimanual_regrasp_traj,
                                [bimanual_wpts[0][-1], bimanual_wpts[1][-1]])
-            self._output_info('Adding regrasping', 'yellow')
+            self._output_debug('Adding regrasping', 'yellow')
             self._query.tree_start.vertices.append(v_near)
             self._query.connecting_rot_traj         = rot_traj
             self._query.connecting_translation_traj = translation_traj
@@ -1401,9 +1416,11 @@ class CCPlanner(object):
             status = REACHED
             return status,
           else: # need regrasp
+            if v_near.regrasp_count >= self._query.regrasp_limit_start:
+              status = TRAPPED
+              break
             self._output_debug('TRAPPED : SE(3) trajectory need regrasping', 
                                bold=False)
-            # continue
             status = NEEDREGRASP
             return status, res[1:], v_near.index
 
@@ -1480,7 +1497,10 @@ class CCPlanner(object):
                                               translation_traj, bimanual_wpts,
                                               timestamps)
             v_near = v_new
-          else:
+          else: # need regrasp
+            if v_near.regrasp_count >= self._query.regrasp_limit_start:
+              status = TRAPPED
+              break
             self._output_debug('TRAPPED : SE(3) trajectory need regrasping', 
                                bold=False)
             status = NEEDREGRASP
@@ -2207,6 +2227,7 @@ class BimanualObjectTracker(object):
       if not self._reach_joint_limit(sol): # remove IK at joint limit
         feasible_IKs.append(sol)
         q_delta  = self._compute_q_delta(robot_index, target_pose, sol)
+        q_delta = np.where(q_delta, q_delta, 1e-10)          
         score = np.min(np.maximum((self._jmax - sol)/q_delta, 0)
                      + np.maximum((self._jmin - sol)/q_delta, 0))
         scores.append(score)

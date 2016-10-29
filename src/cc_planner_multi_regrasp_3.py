@@ -1,6 +1,7 @@
 """
 Closed-chain motion planner with multiple regrasping for bimaual setup.
 This version is based on RRT-connect structure.
+This variation uses available room for extension at each joint as scoring function.
 """
 
 import openravepy as orpy
@@ -2224,7 +2225,9 @@ class BimanualObjectTracker(object):
     for sol in sols:
       if not self._reach_joint_limit(sol): # remove IK at joint limit
         feasible_IKs.append(sol)
-        scores.append(np.dot(self._jmax - sol, sol - self._jmin))
+        score = np.min(np.append((self._jmax - sol) / self._jmax, 
+                                 (self._jmin - sol) / self._jmin))
+        scores.append(score)
     sorted_IKs = np.array(feasible_IKs)[np.array(scores).argsort()[::-1]]
     return sorted_IKs
 

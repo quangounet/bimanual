@@ -101,7 +101,7 @@ if __name__ == "__main__":
   ccplanner.set_query(ccquery)
   res = ccplanner.solve(timeout=10)
 
-  rep = 20
+  rep = 100
   from time import time
   ccplanner = ccp.CCPlanner(Lshape, [left_robot, right_robot], debug=False)
   t = time() 
@@ -111,7 +111,7 @@ if __name__ == "__main__":
                           q_robots_goal, q_robots_grasp, T_obj_start, nn=2, 
                           step_size=0.5, regrasp_limits=[1, 1])
     ccplanner.set_query(ccquery)
-    res = ccplanner.solve(timeout=50)
+    res = ccplanner.solve(timeout=20)
     if res:
       i += 1
   print (time()-t)/rep
@@ -137,5 +137,8 @@ cc_planner_multi_regrasp_ttt   6700K: [1, 1]: timeout50s: 3.9224 (0 restart)
 cc_planner_multi_regrasp_2     6700K: [1, 1]: timeout50s: 6.1169 (0 restart)
 cc_planner_multi_regrasp_2_ttt 6700K: [1, 1]: timeout50s: 6.0749 (1 restart)
 cc_planner_multi_regrasp_2_5   6700K: [1, 1]: timeout50s: 5.1056 (1 restart)
-
+------
+cc_planner_multi_regrasp       6700K: [1, 1]: timeout20s: 4.3664
+cc_planner_multi_regrasp_3     6700K: [1, 1]: timeout20s: 4.4822
+cc_planner_multi_regrasp_ttt   6700K: [1, 1]: timeout20s: 4.2683
 """

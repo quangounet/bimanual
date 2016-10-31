@@ -636,27 +636,28 @@ class CCPlanner(object):
     C{self.bimanual_T_rel} to store relative pose of the robots' end-effectors
     w.r.t. to the object.
     """
+    query = self._query
     # Compute relative transformation from end-effectors to object
     self.bimanual_T_rel = []
     for i in xrange(2):
-      self.bimanual_T_rel.append(np.dot(np.linalg.inv(self._query.v_start.config.SE3_config.T), utils.compute_endeffector_transform(self.manips[i], self._query.v_start.config.q_robots[i])))
+      self.bimanual_T_rel.append(np.dot(np.linalg.inv(query.v_start.config.SE3_config.T), utils.compute_endeffector_transform(self.manips[i], query.v_start.config.q_robots[i])))
 
     # Compute object SE3_config at goal if not specified
-    if self._query.v_goal.config.SE3_config is None:
-      T_left_robot_goal = utils.compute_endeffector_transform(self.manips[0], self._query.v_goal.config.q_robots[0])
+    if query.v_goal.config.SE3_config is None:
+      T_left_robot_goal = utils.compute_endeffector_transform(self.manips[0], query.v_goal.config.q_robots[0])
       T_obj_goal = np.dot(T_left_robot_goal, np.linalg.inv(self.bimanual_T_rel[0]))
-      self._query.v_goal.config.SE3_config = SE3Config.from_matrix(T_obj_goal)
+      query.v_goal.config.SE3_config = SE3Config.from_matrix(T_obj_goal)
 
     # Check start and goal grasping pose
     bimanual_goal_rel_T = []
     for i in xrange(2):
-      bimanual_goal_rel_T.append(np.dot(np.linalg.inv(self._query.v_goal.config.SE3_config.T), utils.compute_endeffector_transform(self.manips[i], self._query.v_goal.config.q_robots[i])))
+      bimanual_goal_rel_T.append(np.dot(np.linalg.inv(query.v_goal.config.SE3_config.T), utils.compute_endeffector_transform(self.manips[i], query.v_goal.config.q_robots[i])))
 
     if not np.isclose(self.bimanual_T_rel, bimanual_goal_rel_T, atol=1e-3).all():
       raise CCPlannerException('Start and goal grasping pose not matching.')
 
     # Complete tree_end in the query 
-    self._query.tree_end = CCTree(self._query.v_goal, BW)
+    query.tree_end = CCTree(query.v_goal, BW)
 
 
   def loose_gripper(self, query):
@@ -695,56 +696,57 @@ class CCPlanner(object):
     @rtype:  int
     @return: Whether the query is solved within given time limit.
     """
-    if self._query.solved:
+    query = self._query
+    if query.solved:
       self._output_info('This query has already been solved.', 'green')
       return True
 
-    self.loose_gripper(self._query)
+    self.loose_gripper(query)
 
     t = 0.0
-    prev_iter = self._query.iteration_count
+    prev_iter = query.iteration_count
     
     t_begin = time()
     if (self._connect() == REACHED):
       t_end = time()
-      self._query.running_time += (t_end - t_begin)
+      query.running_time += (t_end - t_begin)
       
       self._output_info('Path found. Iterations: {0}. Running time: {1}s.'
-                        .format(self._query.iteration_count, 
-                        self._query.running_time), 'green')
-      self._query.solved = True
-      self._query.generate_final_cctraj()
-      self.reset_config(self._query)
+                        .format(query.iteration_count, 
+                        query.running_time), 'green')
+      query.solved = True
+      query.generate_final_cctraj()
+      self.reset_config(query)
       return True
 
     elasped_time = time() - t_begin
     t += elasped_time
-    self._query.running_time += elasped_time
+    query.running_time += elasped_time
 
     while (t < timeout):
-      self._query.iteration_count += 1
-      self._output_debug('Iteration no. {0}'.format(self._query.iteration_count), 'blue')
+      query.iteration_count += 1
+      self._output_debug('Iteration no. {0}'.format(query.iteration_count), 'blue')
       t_begin = time()
 
       SE3_config = self.sample_SE3_config()
       if (self._extend(SE3_config) != TRAPPED):
-        self._output_debug('Tree start : {0}; Tree end : {1}'.format(len(self._query.tree_start.vertices), len(self._query.tree_end.vertices)), 'green')
+        self._output_debug('Tree start : {0}; Tree end : {1}'.format(len(query.tree_start.vertices), len(query.tree_end.vertices)), 'green')
 
         if (self._connect() == REACHED):
           t_end = time()
-          self._query.running_time += (t_end - t_begin)
-          self._output_info('Path found. Iterations: {0}. Running time: {1}s.'.format(self._query.iteration_count, self._query.running_time), 'green')
-          self._query.solved = True
-          self._query.generate_final_cctraj()
-          self.reset_config(self._query)
+          query.running_time += (t_end - t_begin)
+          self._output_info('Path found. Iterations: {0}. Running time: {1}s.'.format(query.iteration_count, query.running_time), 'green')
+          query.solved = True
+          query.generate_final_cctraj()
+          self.reset_config(query)
           return True
         
       elasped_time = time() - t_begin
       t += elasped_time
-      self._query.running_time += elasped_time
+      query.running_time += elasped_time
 
-    self._output_info('Timeout {0}s reached after {1} iterations'.format(timeout, self._query.iteration_count - prev_iter), 'red')
-    self.reset_config(self._query)
+    self._output_info('Timeout {0}s reached after {1} iterations'.format(timeout, query.iteration_count - prev_iter), 'red')
+    self.reset_config(query)
     return False
 
   def reset_config(self, query):
@@ -796,10 +798,11 @@ class CCPlanner(object):
              -  B{ADVANCED}: when the tree is extended towards the given
                              config
     """
+    query = self._query
     status = TRAPPED
     nnindices = self._nearest_neighbor_indices(SE3_config, FW)
     for index in nnindices:
-      v_near = self._query.tree_start[index]
+      v_near = query.tree_start[index]
       
       q_beg  = v_near.config.SE3_config.q
       qd_beg = v_near.config.SE3_config.qd
@@ -813,16 +816,16 @@ class CCPlanner(object):
 
       # Check if SE3_config is too far from v_near.SE3_config
       SE3_dist = utils.SE3_distance(SE3_config.T, v_near.config.SE3_config.T, 1.0 / np.pi, 1.0)
-      if SE3_dist <= self._query.step_size:
+      if SE3_dist <= query.step_size:
         status = REACHED
         new_SE3_config = SE3_config
       else:
         if not utils._is_close_axis(q_beg, q_end):
           q_end = -q_end
-        q_end = q_beg + self._query.step_size * (q_end - q_beg) / SE3_dist
+        q_end = q_beg + query.step_size * (q_end - q_beg) / SE3_dist
         q_end /= np.sqrt(np.dot(q_end, q_end))
 
-        p_end = p_beg + self._query.step_size * (p_end - p_beg) / SE3_dist
+        p_end = p_beg + query.step_size * (p_end - p_beg) / SE3_dist
 
         new_SE3_config = SE3Config(q_end, p_end, qd_end, pd_end)
         status = ADVANCED
@@ -844,12 +847,12 @@ class CCPlanner(object):
       R_beg = orpy.rotationMatrixFromQuat(q_beg)
       R_end = orpy.rotationMatrixFromQuat(q_end)
       rot_traj = lie.InterpolateSO3(R_beg, R_end, qd_beg, qd_end,
-                                    self._query.interpolation_duration)
-      translation_traj_str = utils.traj_str_3rd_degree(p_beg, p_end, pd_beg, pd_end, self._query.interpolation_duration)
+                                    query.interpolation_duration)
+      translation_traj_str = utils.traj_str_3rd_degree(p_beg, p_end, pd_beg, pd_end, query.interpolation_duration)
 
       # Check translational limit
       # NB: Can skip this step, since it's not likely the traj will exceed the limits given that p_beg and p_end are within limits
-      res = utils.check_translation_traj_str_limits(self._query.upper_limits, self._query.lower_limits, translation_traj_str)
+      res = utils.check_translation_traj_str_limits(query.upper_limits, query.lower_limits, translation_traj_str)
       if not res:
         self._output_debug('TRAPPED : SE(3) trajectory exceeds translational'
                            ' limit', bold=False)
@@ -882,7 +885,7 @@ class CCPlanner(object):
       new_q_robots = [wpts[-1] for wpts in bimanual_wpts] 
       new_config = CCConfig(new_q_robots, new_SE3_config)
       v_new = CCVertex(new_config)
-      self._query.tree_start.add_vertex(v_new, v_near.index, rot_traj, translation_traj, bimanual_wpts, timestamps)
+      query.tree_start.add_vertex(v_new, v_near.index, rot_traj, translation_traj, bimanual_wpts, timestamps)
       return status
     return status
 
@@ -900,10 +903,11 @@ class CCPlanner(object):
              -  B{ADVANCED}: when the tree is extended towards the given
                              config
     """
+    query = self._query
     status = TRAPPED
     nnindices = self._nearest_neighbor_indices(SE3_config, BW)
     for index in nnindices:
-      v_near = self._query.tree_end[index]
+      v_near = query.tree_end[index]
       
       # quaternion
       q_end  = v_near.config.SE3_config.q
@@ -920,16 +924,16 @@ class CCPlanner(object):
 
       # Check if SE3_config is too far from v_near.SE3_config
       SE3_dist = utils.SE3_distance(SE3_config.T, v_near.config.SE3_config.T, 1.0 / np.pi, 1.0)
-      if SE3_dist <= self._query.step_size:
+      if SE3_dist <= query.step_size:
         status = REACHED
         new_SE3_config = SE3_config
       else:
         if not utils._is_close_axis(q_beg, q_end):
           q_beg = -q_beg
-        q_beg = q_end + self._query.step_size * (q_beg - q_end) / SE3_dist
+        q_beg = q_end + query.step_size * (q_beg - q_end) / SE3_dist
         q_beg /= np.sqrt(np.dot(q_beg, q_beg))
 
-        p_beg = p_end + self._query.step_size * (p_beg - p_end) / SE3_dist
+        p_beg = p_end + query.step_size * (p_beg - p_end) / SE3_dist
 
         new_SE3_config = SE3Config(q_beg, p_beg, qd_beg, pd_beg)
         status = ADVANCED
@@ -952,12 +956,12 @@ class CCPlanner(object):
       R_beg = orpy.rotationMatrixFromQuat(q_beg)
       R_end = orpy.rotationMatrixFromQuat(q_end)
       rot_traj = lie.InterpolateSO3(R_beg, R_end, qd_beg, qd_end,
-                                    self._query.interpolation_duration)
-      translation_traj_str = utils.traj_str_3rd_degree(p_beg, p_end, pd_beg, pd_end, self._query.interpolation_duration)
+                                    query.interpolation_duration)
+      translation_traj_str = utils.traj_str_3rd_degree(p_beg, p_end, pd_beg, pd_end, query.interpolation_duration)
 
       # Check translational limit
       # NB: Can skip this step, since it's not likely the traj will exceed the limits given that p_beg and p_end are within limits
-      res = utils.check_translation_traj_str_limits(self._query.upper_limits, self._query.lower_limits, translation_traj_str)
+      res = utils.check_translation_traj_str_limits(query.upper_limits, query.lower_limits, translation_traj_str)
       if not res:
         self._output_debug('TRAPPED : SE(3) trajectory exceeds translational limit', bold=False)
         status = TRAPPED
@@ -989,7 +993,7 @@ class CCPlanner(object):
       new_q_robots = [wpts[0] for wpts in bimanual_wpts] 
       new_config = CCConfig(new_q_robots, new_SE3_config)
       v_new = CCVertex(new_config)
-      self._query.tree_end.add_vertex(v_new, v_near.index, rot_traj, translation_traj, bimanual_wpts, timestamps)
+      query.tree_end.add_vertex(v_new, v_near.index, rot_traj, translation_traj, bimanual_wpts, timestamps)
       return status
     return status
 
@@ -1020,11 +1024,13 @@ class CCPlanner(object):
              -  B{TRAPPED}: connection successful
              -  B{REACHED}: connection failed
     """
-    v_test = self._query.tree_start.vertices[-1]
+    query = self._query
+
+    v_test = query.tree_start.vertices[-1]
     nnindices = self._nearest_neighbor_indices(v_test.config.SE3_config, BW)
     status = TRAPPED
     for index in nnindices:
-      v_near = self._query.tree_end[index]
+      v_near = query.tree_end[index]
 
       # quaternion
       q_beg  = v_test.config.SE3_config.q
@@ -1044,12 +1050,12 @@ class CCPlanner(object):
       R_beg = orpy.rotationMatrixFromQuat(q_beg)
       R_end = orpy.rotationMatrixFromQuat(q_end)
       rot_traj = lie.InterpolateSO3(R_beg, R_end, qd_beg, qd_end, 
-                                    self._query.interpolation_duration)
-      translation_traj_str = utils.traj_str_3rd_degree(p_beg, p_end, pd_beg, pd_end, self._query.interpolation_duration)
+                                    query.interpolation_duration)
+      translation_traj_str = utils.traj_str_3rd_degree(p_beg, p_end, pd_beg, pd_end, query.interpolation_duration)
 
       # Check translational limit
       # NB: Can skip this step, since it's not likely the traj will exceed the limits given that p_beg and p_end are within limits
-      if not utils.check_translation_traj_str_limits(self._query.upper_limits, self._query.lower_limits, translation_traj_str):
+      if not utils.check_translation_traj_str_limits(query.upper_limits, query.lower_limits, translation_traj_str):
         self._output_debug('TRAPPED : SE(3) trajectory exceeds translational limit', bold=False)
         continue
 
@@ -1081,11 +1087,11 @@ class CCPlanner(object):
         continue
 
       # Now the connection is successful
-      self._query.tree_end.vertices.append(v_near)
-      self._query.connecting_rot_traj         = rot_traj
-      self._query.connecting_translation_traj = translation_traj
-      self._query.connecting_bimanual_wpts    = bimanual_wpts
-      self._query.connecting_timestamps       = timestamps
+      query.tree_end.vertices.append(v_near)
+      query.connecting_rot_traj         = rot_traj
+      query.connecting_translation_traj = translation_traj
+      query.connecting_bimanual_wpts    = bimanual_wpts
+      query.connecting_timestamps       = timestamps
       status = REACHED
       return status
     return status        
@@ -1101,11 +1107,13 @@ class CCPlanner(object):
              -  B{TRAPPED}: connection successful
              -  B{REACHED}: connection failed
     """
-    v_test = self._query.tree_end.vertices[-1]
+    query = self._query
+
+    v_test = query.tree_end.vertices[-1]
     nnindices = self._nearest_neighbor_indices(v_test.config.SE3_config, FW)
     status = TRAPPED
     for index in nnindices:
-      v_near = self._query.tree_start[index]
+      v_near = query.tree_start[index]
 
       # quaternion
       q_end  = v_test.config.SE3_config.q
@@ -1125,12 +1133,12 @@ class CCPlanner(object):
       R_beg = orpy.rotationMatrixFromQuat(q_beg)
       R_end = orpy.rotationMatrixFromQuat(q_end)
       rot_traj = lie.InterpolateSO3(R_beg, R_end, qd_beg, qd_end, 
-                                    self._query.interpolation_duration)
-      translation_traj_str = utils.traj_str_3rd_degree(p_beg, p_end, pd_beg, pd_end, self._query.interpolation_duration)
+                                    query.interpolation_duration)
+      translation_traj_str = utils.traj_str_3rd_degree(p_beg, p_end, pd_beg, pd_end, query.interpolation_duration)
 
       # Check translational limit
       # NB: Can skip this step, since it's not likely the traj will exceed the limits given that p_beg and p_end are within limits
-      if not utils.check_translation_traj_str_limits(self._query.upper_limits, self._query.lower_limits, translation_traj_str):
+      if not utils.check_translation_traj_str_limits(query.upper_limits, query.lower_limits, translation_traj_str):
         self._output_debug('TRAPPED : SE(3) trajectory exceeds translational limit', bold=False)
         continue
 
@@ -1162,11 +1170,11 @@ class CCPlanner(object):
         continue
 
       # Now the connection is successful
-      self._query.tree_start.vertices.append(v_near)
-      self._query.connecting_rot_traj         = rot_traj
-      self._query.connecting_translation_traj = translation_traj
-      self._query.connecting_bimanual_wpts    = bimanual_wpts
-      self._query.connecting_timestamps       = timestamps
+      query.tree_start.vertices.append(v_near)
+      query.connecting_rot_traj         = rot_traj
+      query.connecting_translation_traj = translation_traj
+      query.connecting_bimanual_wpts    = bimanual_wpts
+      query.connecting_timestamps       = timestamps
       status = REACHED
       return status
     return status        

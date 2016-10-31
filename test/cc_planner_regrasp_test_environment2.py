@@ -33,10 +33,10 @@ if __name__ == "__main__":
                             [ 0.   ,  1.   ,  0.   , 0.536],
                             [ 0.   ,  0.   ,  1.   , 0],
                             [ 0.   ,  0.   ,  0.   , 1.   ]])
-  T_Lshape = np.array([[ 0.   ,  1.   ,  0.   ,  0.26 ],
-                      [ 1.   , -0.   ,  0.   , -0.175],
-                      [ 0.   , -0.   , -1.   ,  0.176],
-                      [ 0.   ,  0.   ,  0.   ,  1.   ]])
+  T_Lshape = np.array([[ 0.   ,  1.   ,  0.   ,  0.35 ],
+                       [ 1.   , -0.   ,  0.   , -0.175],
+                       [ 0.   , -0.   , -1.   ,  0.176],
+                       [ 0.   ,  0.   ,  0.   ,  1.   ]])
   with env:
     left_robot.SetTransform(T_left_robot)
     right_robot.SetTransform(T_right_robot)
@@ -60,79 +60,44 @@ if __name__ == "__main__":
 
   ############### Move to pre-grasp position ###############
   left_robot.SetDOFValues(
-    [ 0.8041125559,  0.9405270996,  1.0073165866,  3.1415926536, 
-     -1.1937489674,  2.3749088827,  0.4560000086])
+    [ 0.6949533995,  1.3116993833,  0.2908973147,  3.1415926536,
+     -1.5389959555,  2.2657497263,  0.4560000086])
   right_robot.SetDOFValues(
-    [-0.9816436375,  0.7763915147,  1.2904895262, -3.1415926536, 
-     -1.0747116127,  2.1599490161,  0.4560000086])
+    [-0.8419910785,  0.9669669668,  0.9401974069, -3.1415926536,
+     -1.2344282799,  2.2996015751,  0.4560000086])
 
   ################## closed chain planning ###################
 
-  obj_translation_limits =  [[0.9, 0.5, 1.2], [-0.5, -0.4, -0.4]]
+  obj_translation_limits =  [[0.7, 0.5, 1.2], [-0.5, -0.5, 0]]
   q_robots_start = [left_robot.GetActiveDOFValues(),
                     right_robot.GetActiveDOFValues()]
   q_robots_grasp = [left_robot.GetDOFValues()[-1],
                     right_robot.GetDOFValues()[-1]]
   T_obj_start = Lshape.GetTransform()
-  T_obj_goal = np.array(
-    [[ 0.          , -0.6233531712, -0.7819404223,  0.0683513284],
-     [ 1.          ,  0.          ,  0.          , -0.1750002205],
-     [ 0.          , -0.7819404223,  0.6233531712,  0.84509027  ],
-     [ 0.          ,  0.          ,  0.          ,  1.          ]])
+
+  T_obj_goal = np.array([[ 0.   ,  1.   ,  0.   , -0.25],
+                         [ 1.   , -0.   ,  0.   , -0.175],
+                         [ 0.   , -0.   , -1.   ,  0.176],
+                         [ 0.   ,  0.   ,  0.   ,  1.   ]])
 
   q_robots_goal = utils.compute_bimanual_goal_configs(
                     [left_robot, right_robot], Lshape, q_robots_start,
-                     q_robots_grasp, T_obj_start, T_obj_goal)
+                     q_robots_grasp, T_obj_start, T_obj_goal, seeds=[0,0])
 
   embed()
   exit(0)
-  import cc_planner_multi_regrasp as ccp 
 
+  import cc_planner_regrasp as ccp 
   ccplanner = ccp.CCPlanner(Lshape, [left_robot, right_robot], debug=False)
   ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, 
                         q_robots_goal, q_robots_grasp, T_obj_start, nn=2, 
-                        step_size=0.5, regrasp_limits=[1, 1])
+                        step_size=0.2, regrasp_limits=[0, 0])
   ccplanner.set_query(ccquery)
-  res = ccplanner.solve(timeout=100)
-
-  rep = 100
-  from time import time
-  ccplanner = ccp.CCPlanner(Lshape, [left_robot, right_robot], debug=False)
-  t = time() 
-  i = 0
-  while i < rep:
-    ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, 
-                          q_robots_goal, q_robots_grasp, T_obj_start, nn=2, 
-                          step_size=0.5, regrasp_limits=[1, 1])
-    ccplanner.set_query(ccquery)
-    res = ccplanner.solve(timeout=20)
-    if res:
-      i += 1
-  print (time()-t)/rep
+  res = ccplanner.solve(timeout=20)
 
   ccplanner.visualize_cctraj(ccquery.cctraj, speed=1)
   # ccplanner.shortcut(ccquery, maxiter=20)
   # ccplanner.visualize_cctraj(ccquery.cctraj, speed=1)
 
-"""
-------
-cc_planner_multi_regrasp    4.0s,       6700K: 2.71s
-cc_planner_multi_regrasp_1  0.1: 4.4s
-------
-cc_planner_multi_regrasp    6700K: 2.71s
-cc_planner_multi_regrasp_2  6700K: 2.92s
-------
-cc_planner_multi_regrasp    6700K: [1, 1]: 4.52s
-cc_planner_multi_regrasp_2  6700K: [1, 1]: 5.24s
-cc_planner_multi_regrasp_3  6700K: [1, 1]: 4.56s
-------
-cc_planner_multi_regrasp       6700K: [1, 1]: timeout50s: 4.3758 (1 restart)
-cc_planner_multi_regrasp_ttt   6700K: [1, 1]: timeout50s: 3.9224 (0 restart)
-cc_planner_multi_regrasp_2     6700K: [1, 1]: timeout50s: 6.1169 (0 restart)
-cc_planner_multi_regrasp_2_ttt 6700K: [1, 1]: timeout50s: 6.0749 (1 restart)
-cc_planner_multi_regrasp_2_5   6700K: [1, 1]: timeout50s: 5.1056 (1 restart)
-------
-cc_planner_multi_regrasp       6700K: [1, 1]: timeout20s: 4.3664
-cc_planner_multi_regrasp_3     6700K: [1, 1]: timeout20s: 4.4822
-cc_planner_multi_regrasp_ttt   6700K: [1, 1]: timeout20s: 4.2683
-"""
+
+

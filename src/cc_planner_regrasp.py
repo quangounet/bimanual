@@ -715,7 +715,6 @@ class CCPlanner(object):
     
     t_begin = time()
     if (self._connect() == REACHED):
-      self._query.iteration_count += 1
       t_end = time()
       self._query.running_time += (t_end - t_begin)
       
@@ -1091,15 +1090,18 @@ class CCPlanner(object):
           self.robots[i].SetActiveDOFValues(v_test.config.q_robots_nominal[i])
           sleep(0.01)
           self._output_info('Planning regrasping......')
-          # bimanual_regrasp_traj[i] = self.basemanips[i].MoveActiveJoints(
-          #   goal=bimanual_wpts[i][0], outputtrajobj=True, execute=False)
+          bimanual_regrasp_traj[i] = self.basemanips[i].MoveActiveJoints(
+            goal=bimanual_wpts[i][0], outputtrajobj=True, execute=False)
           self.loose_gripper(self._query)
 
+      if bimanual_regrasp_traj[0] is not None or \
+        bimanual_regrasp_traj[1] is not None:
+        v_test.remove_regrasp() # to be compatible with multi_regrasp.py in
+                                # case the vertex already has regrasp action
+        v_test.add_regrasp(bimanual_regrasp_traj, 
+                           [bimanual_wpts[0][0], bimanual_wpts[1][0]])
+
       # Now the connection is successful
-      v_test.remove_regrasp() # to be compatible with multi_regrasp.py
-                              # in case the vertex already has regrasp action
-      v_test.add_regrasp(bimanual_regrasp_traj, 
-                         [bimanual_wpts[0][0], bimanual_wpts[1][0]])
       self._query.tree_end.vertices.append(v_near)
       self._query.connecting_rot_traj         = rot_traj
       self._query.connecting_translation_traj = translation_traj
@@ -1181,16 +1183,19 @@ class CCPlanner(object):
           self.robots[i].SetActiveDOFValues(bimanual_wpts[i][-1])
           self._output_info('Planning regrasping......')
           sleep(0.01)          
-          # bimanual_regrasp_traj[i] = self.basemanips[i].MoveActiveJoints(
-          #   goal=v_test.config.q_robots_nominal[i], outputtrajobj=True, 
-          #   execute=False)
+          bimanual_regrasp_traj[i] = self.basemanips[i].MoveActiveJoints(
+            goal=v_test.config.q_robots_nominal[i], outputtrajobj=True, 
+            execute=False)
           self.loose_gripper(self._query)
 
+      if bimanual_regrasp_traj[0] is not None or \
+        bimanual_regrasp_traj[1] is not None:
+        v_test.remove_regrasp() # to be compatible with multi_regrasp.py in
+                                # case the vertex already has regrasp action
+        v_test.add_regrasp(bimanual_regrasp_traj,
+                           [bimanual_wpts[0][-1], bimanual_wpts[1][-1]])
+
       # Now the connection is successful
-      v_test.remove_regrasp() # to be compatible with multi_regrasp.py
-                              # in case the vertex already has regrasp action
-      v_test.add_regrasp(bimanual_regrasp_traj,
-                         [bimanual_wpts[0][-1], bimanual_wpts[1][-1]])
       self._query.tree_start.vertices.append(v_near)
       self._query.connecting_rot_traj         = rot_traj
       self._query.connecting_translation_traj = translation_traj

@@ -661,8 +661,6 @@ def merge_wpts_list(wpts_list, eps=1e-3):
       try:
         assert(distance(W[0][0:6], new_wpts[-1][0:6]) < eps)
       except:
-        from IPython import embed
-        embed()
         print 'W', W[0]
         print 'new', new_wpts[-1]
         assert(False)
@@ -676,7 +674,7 @@ def merge_wpts_list(wpts_list, eps=1e-3):
 def merge_bimanual_trajs_wpts_list(bimanual_trajs, eps=1e-3):
   """
   Merge lists of bimanual waypoints in the given bimanual trajectories, which
-  may contain regreap actions stored in tuples.
+  may contain regrasp actions stored in dict.
   """
   new_bimanual_trajs = []
   traj_num = len(bimanual_trajs)

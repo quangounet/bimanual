@@ -706,7 +706,6 @@ class CCPlanner(object):
     
     t_begin = time()
     if (self._connect() == REACHED):
-      self._query.iteration_count += 1
       t_end = time()
       self._query.running_time += (t_end - t_begin)
       

@@ -157,16 +157,21 @@ class CCVertex(object):
     self.contain_regrasp       = False
     self.bimanual_regrasp_traj = None
 
-  def add_regrasp(self, bimanual_regrasp_traj, q_robots):
+  def _add_regrasp_action(self, q_robots):
     """
-    Add regrasp info to a vertex.
+    Add regrasp action to a vertex.
     If the vertex contains regrasp already, replace it.
     """
     if not self.contain_regrasp:
       self.contain_regrasp = True
       self.regrasp_count += 1
     self.config.set_q_robots(q_robots)
-    self.bimanual_regrasp_traj = bimanual_regrasp_traj   
+
+  def _fill_regrasp_traj(self, bimanual_regrasp_traj):
+    """
+    Add regrasp traj to a vertex containing regrasp action.
+    """
+    self.bimanual_regrasp_traj = dict(bimanual_regrasp_traj)
 
 class CCTree(object):  
   """
@@ -482,9 +487,10 @@ class CCQuery(object):
     self.bimanual_trajs              = None
 
     # Statistics
-    self.running_time    = 0.0
-    self.iteration_count = 0
-    self.solved          = False
+    self.running_time          = 0.0
+    self.regrasp_planning_time = 0.0
+    self.iteration_count       = 0
+    self.solved                = False
     
     # Parameters    
     self.upper_limits = obj_translation_limits[0]
@@ -614,6 +620,7 @@ class CCPlanner(object):
       self.basemanips.append(orpy.interfaces.BaseManipulation(robot))
       self.taskmanips.append(orpy.interfaces.TaskManipulation(robot))
       robot.SetActiveDOFs(self.manips[i].GetArmIndices())
+    self._nrobots = len(self.robots)
 
     self.bimanual_obj_tracker = BimanualObjectTracker(self.robots, manip_obj, debug=self._debug)
 
@@ -673,7 +680,7 @@ class CCPlanner(object):
     self._query.tree_end = CCTree(self._query.v_goal, BW)
 
 
-  def loose_gripper(self, query):
+  def loose_gripper(self, query, robot_indices=None):
     """
     Open grippers of C{self.robots} by a small amount from C{q_robots_grasp}
     stored in C{query}. This is necessary to avoid collision between object
@@ -683,7 +690,9 @@ class CCPlanner(object):
     @param query: Query used to extract the grippers' configuration when grasping
                   the object, which is taken as a reference for loosing the gripper.
     """
-    for i in xrange(2):
+    if robot_indices is None:
+      robot_indices = xrange(self._nrobots)
+    for i in robot_indices:
       self.robots[i].SetDOFValues([query.q_robots_grasp[i]*0.7],
                                   [self.manips[i].GetArmDOF()])
 
@@ -727,13 +736,8 @@ class CCPlanner(object):
     if len(res) == 1:
       status = res[0]
       if status == REACHED:
-        self._query.iteration_count += 1
-        t_end = time()
-        self._query.running_time += (t_end - t_begin)
-        self._output_info('Path found. Iterations: {0}. Running time: {1}s.'.format(self._query.iteration_count, self._query.running_time), 'green')
-        self._query.solved = True
-        self._query.generate_final_cctraj()
-        self.reset_config(self._query)
+        self._plan_regrasp_trajs()
+        self._finish(t_begin)
         return True
       reextend = False
     else:
@@ -777,12 +781,8 @@ class CCPlanner(object):
           if len(res) == 1:
             status = res[0]
             if status == REACHED:
-              t_end = time()
-              self._query.running_time += (t_end - t_begin)
-              self._output_info('Path found. Iterations: {0}. Running time: {1}s.'.format(self._query.iteration_count, self._query.running_time), 'green')
-              self._query.solved = True
-              self._query.generate_final_cctraj()
-              self.reset_config(self._query)
+              self._plan_regrasp_trajs()
+              self._finish(t_begin)
               return True
             reextend = False
           else:
@@ -804,9 +804,101 @@ class CCPlanner(object):
       t += elasped_time
       self._query.running_time += elasped_time
 
-    self._output_info('Timeout {0}s reached after {1} iterations'.format(timeout, self._query.iteration_count - prev_iter), 'red')
-    self.reset_config(self._query)
+    self._finish(t_begin, success=False, timeout=timeout, prev_iter=prev_iter)
     return False
+
+  def _finish(self, t_begin, success=True, timeout=None, prev_iter=None):
+    """
+    Display planning result and wrap up.
+    """
+
+    if success:
+      t_end = time()
+      self._query.running_time += (t_end - t_begin)
+      total_time = self._query.running_time
+      regrasp_time = self._query.regrasp_planning_time
+      global_time = total_time - regrasp_time
+      self._output_info('Path found after {0} iterations. Total running time'
+                        ': [{1:.2f}]s.'.format(self._query.iteration_count, 
+                        total_time), 'green')
+      self._output_info('Global planning time: [{0:.2f}]s. Regrasp planning time: [{1:.2f}]s.'.format(global_time, regrasp_time), 'green')
+      self._query.solved = True
+      self._query.generate_final_cctraj()
+    else:
+      self._output_info('Timeout {0}s reached after {1} iterations.'.format(
+                        timeout, self._query.iteration_count - prev_iter),
+                        'red')
+
+    self.reset_config(self._query)
+
+  def _plan_regrasp_trajs(self, end_index=-1):
+    self._output_info('Global path found.', 'yellow')
+    t_start = time()
+
+    # FW tree
+    regrasp_count = 0
+    vertex = self._query.tree_start[end_index]
+    while (vertex.parent_index is not None):
+      if vertex.contain_regrasp:
+        regrasp_count += 1
+        self._output_info('Planning regrasp no.[{0}] for [tree_start]'.format(
+                           regrasp_count), 'yellow')
+
+        bimanual_regrasp_traj = {0:None, 1:None}
+        # position everything correctly 
+        self.obj.SetTransform(vertex.config.SE3_config.T)
+        for robot, q_robot_nominal in zip(self.robots,
+                                          vertex.config.q_robots_nominal):
+          robot.SetActiveDOFValues(q_robot_nominal)
+
+        # start planning
+        for i in xrange(self._nrobots):
+          q_robot         = vertex.config.q_robots[i]
+          q_robot_nominal = vertex.config.q_robots_nominal[i]
+          if not np.isclose(q_robot, q_robot_nominal).all():
+            robot     = self.robots[i]
+            manip     = self.manips[i]
+            basemanip = self.basemanips[i]
+            robot.SetDOFValues([0], [manip.GetArmDOF()])
+            bimanual_regrasp_traj[i] = basemanip.MoveActiveJoints(
+              goal=q_robot, outputtrajobj=True, execute=False)
+            robot.SetActiveDOFValues(q_robot)
+            self.loose_gripper(self._query, [i])
+        vertex._fill_regrasp_traj(bimanual_regrasp_traj)
+      vertex = self._query.tree_start.vertices[vertex.parent_index]
+
+    # BW tree
+    regrasp_count = 0
+    vertex = self._query.tree_end[end_index]
+    while (vertex.parent_index is not None):
+      if vertex.contain_regrasp:
+        regrasp_count += 1
+        self._output_info('Planning regrasp no.[{0}] for [tree_end]'.format(
+                           regrasp_count), 'yellow')
+
+        bimanual_regrasp_traj = {0:None, 1:None}
+        # position everything correctly 
+        self.obj.SetTransform(vertex.config.SE3_config.T)
+        for robot, q_robot in zip(self.robots, vertex.config.q_robots):
+          robot.SetActiveDOFValues(q_robot)
+
+        # start planning
+        for i in xrange(self._nrobots):
+          q_robot         = vertex.config.q_robots[i]
+          q_robot_nominal = vertex.config.q_robots_nominal[i]
+          if not np.isclose(q_robot, q_robot_nominal).all():
+            robot     = self.robots[i]
+            manip     = self.manips[i]
+            basemanip = self.basemanips[i]
+            robot.SetDOFValues([0], [manip.GetArmDOF()])
+            bimanual_regrasp_traj[i] = basemanip.MoveActiveJoints(
+              goal=q_robot_nominal, outputtrajobj=True, execute=False)
+            robot.SetActiveDOFValues(q_robot_nominal)
+            self.loose_gripper(self._query, [i])
+        vertex._fill_regrasp_traj(bimanual_regrasp_traj)
+      vertex = self._query.tree_end.vertices[vertex.parent_index]
+
+    self._query.regrasp_planning_time += time() - t_start
 
   def reset_config(self, query):
     """
@@ -818,7 +910,7 @@ class CCPlanner(object):
     @type  query: CCQuery
     @param query: Query to be used to extract starting configuration.
     """
-    for i in xrange(len(self.robots)):
+    for i in xrange(self._nrobots):
       self.robots[i].SetActiveDOFValues(query.v_start.config.q_robots[i])
       self.robots[i].SetDOFValues([query.q_robots_grasp[i]],
                                   [self.manips[i].GetArmDOF()])
@@ -960,9 +1052,9 @@ class CCPlanner(object):
         v_new = CCVertex(new_config)
 
         if reextend:
-          q_robots_pr = np.array(new_q_robots) # post regrasp configs
-          q_robots_pr[reextend_info[0]] = reextend_info[1]
-          v_new.add_regrasp({0: None, 1: None}, q_robots_pr)
+          q_robots_real = np.array(new_q_robots) # post regrasp configs
+          q_robots_real[reextend_info[0]] = reextend_info[1]
+          v_new._add_regrasp_action(q_robots_real)
           self._output_debug('Adding regrasping', 'yellow')
 
         self._query.tree_start.add_vertex(v_new, v_near.index, rot_traj, translation_traj, bimanual_wpts, timestamps)
@@ -1093,9 +1185,9 @@ class CCPlanner(object):
         v_new = CCVertex(new_config)
 
         if reextend:
-          q_robots_pr = np.array(new_q_robots) # post regrasp configs
-          q_robots_pr[reextend_info[0]] = reextend_info[1]
-          v_new.add_regrasp({0: None, 1: None}, q_robots_pr)
+          q_robots_real = np.array(new_q_robots) # post regrasp configs
+          q_robots_real[reextend_info[0]] = reextend_info[1]
+          v_new._add_regrasp_action(q_robots_real)
           self._output_debug('Adding regrasping', 'yellow')
 
         self._query.tree_end.add_vertex(v_new, v_near.index, rot_traj, translation_traj, bimanual_wpts, timestamps)
@@ -1200,26 +1292,21 @@ class CCPlanner(object):
               break
 
             # Check similarity of terminal IK solutions
-            bimanual_regrasp_traj = {0: None, 1: None}
             eps = 1e-3
+            need_regrasp = False
             for i in xrange(2):
               if not utils.distance(v_test.config.q_robots_nominal[i], 
                         bimanual_wpts[i][0]) < eps:
                 self._output_debug('IK discrepancy (robot {0})'.format(i), 
-                                  bold=False)
-                self.robots[i].SetDOFValues([0], [self.manips[i].GetArmDOF()])
-                self.robots[i].SetActiveDOFValues(
-                  v_test.config.q_robots_nominal[i])
-                sleep(0.01)
-                self._output_debug('Planning regrasping......')
-                # bimanual_regrasp_traj[i] = self.basemanips[i].MoveActiveJoints(goal=bimanual_wpts[i][0], outputtrajobj=True, 
-                #    execute=False)
-                self.loose_gripper(self._query)
+                                    bold=False)
+                need_regrasp = True
+            if need_regrasp:            
+              self._output_debug('Adding regrasp action', 'yellow')
+              q_robots_real = np.array([bimanual_wpts[0][0],
+                                        bimanual_wpts[1][0]])
+              v_test._add_regrasp_action(q_robots_real)
 
             # Now the connection is successful
-            v_test.add_regrasp(bimanual_regrasp_traj, 
-                               [bimanual_wpts[0][0], bimanual_wpts[1][0]])
-            self._output_debug('Adding regrasping', 'yellow')
             self._query.tree_end.vertices.append(v_near)
             self._query.connecting_rot_traj         = rot_traj
             self._query.connecting_translation_traj = translation_traj
@@ -1388,24 +1475,21 @@ class CCPlanner(object):
               break
 
             # Check similarity of terminal IK solutions
-            bimanual_regrasp_traj = {0: None, 1: None}
             eps = 1e-3
+            need_regrasp = False
             for i in xrange(2):
               if not utils.distance(v_test.config.q_robots_nominal[i], 
                         bimanual_wpts[i][-1]) < eps:
                 self._output_debug('IK discrepancy (robot {0})'.format(i), 
                                    bold=False)
-                self.robots[i].SetDOFValues([0], [self.manips[i].GetArmDOF()])
-                self.robots[i].SetActiveDOFValues(bimanual_wpts[i][-1])
-                self._output_debug('Planning regrasping......')
-                sleep(0.01)          
-                # bimanual_regrasp_traj[i] = self.basemanips[i].MoveActiveJoints(
-                #   goal=v_test.config.q_robots_nominal[i], outputtrajobj=True, execute=False)
-                self.loose_gripper(self._query)
+                need_regrasp = True
+            if need_regrasp:            
+              self._output_debug('Adding regrasp action', 'yellow')
+              q_robots_real = np.array([bimanual_wpts[0][-1],
+                                        bimanual_wpts[1][-1]])
+              v_test._add_regrasp_action(q_robots_real)
 
             # Now the connection is successful
-            v_test.add_regrasp(bimanual_regrasp_traj,
-                               [bimanual_wpts[0][-1], bimanual_wpts[1][-1]])
             self._output_debug('Adding regrasping', 'yellow')
             self._query.tree_start.vertices.append(v_near)
             self._query.connecting_rot_traj         = rot_traj
@@ -1674,8 +1758,8 @@ class CCPlanner(object):
       sleep(refresh_step)
 
   def visualize_regrasp_traj(self, bimanual_traj, speed=1.0):
-    sleep(0.5)
-    return
+    # sleep(0.5)
+    # return
     sampling_step = 0.01
     refresh_step  = sampling_step / speed
 
@@ -1998,7 +2082,7 @@ class BimanualObjectTracker(object):
       self._jd_max = self._vmax * discr_check_timestep
 
       t_prev = 0
-      q_robots_prev = q_robots_init
+      q_robots_prev = np.array(q_robots_init)
       T_obj_prev = np.eye(4)
       T_obj_prev[0:3, 0:3] = lie_traj.EvalRotation(t_prev)
       T_obj_prev[0:3, 3] = translation_traj.Eval(t_prev)
@@ -2059,7 +2143,7 @@ class BimanualObjectTracker(object):
       # Other IK solutions are generated by interpolation
       self._jd_max = self._vmax * discr_check_timestep
       
-      q_robots_prev = q_robots_init
+      q_robots_prev = np.array(q_robots_init)
       t_prev = duration
       T_obj_prev = np.eye(4)
       T_obj_prev[0:3, 0:3] = lie_traj.EvalRotation(t_prev)

@@ -385,7 +385,7 @@ class CCQuery(object):
                q_robots_grasp, T_obj_start, T_obj_goal=None, nn=-1, 
                step_size=0.7, velocity_scale=1, interpolation_duration=None, 
                discr_timestep=5e-3, discr_check_timestep=None,
-               regrasp_limits=[5, 5]):
+               regrasp_limits=[0, 0]):
     """
     CCQuery constructor. It is independent of robots to be planned since robot
     info will be stored in planner itself.

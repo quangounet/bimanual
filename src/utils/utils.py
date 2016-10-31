@@ -524,7 +524,11 @@ def compute_accumulated_SE3_distance(lie_traj, translation_traj, t0=None, t1=Non
   if t1 is None: 
     t1 = lie_traj.duration
   if not 0 <= t0 < t1 <= lie_traj.duration:
-    raise Exception('Incorrect time stamp.')
+    if not np.isclose(0, t0, atol=0.001) or \
+       not np.isclose(t1, lie_traj.duration, atol=0.001):
+      from IPython import embed
+      embed()
+      raise Exception('Incorrect time stamp.')
 
   accumulated_dist = 0
   timestamps = np.append(np.arange(t0 + discr_timestep, 

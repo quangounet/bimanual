@@ -599,7 +599,7 @@ class CCPlanner(object):
   - two identical robots
   """
   
-  def __init__(self, manip_obj, robots, debug=False):
+  def __init__(self, manip_obj, robots, plan_regrasp=True, debug=False):
     """
     CCPlanner constructor. It requires infomation of the robots and the object
     being manipulated.
@@ -612,10 +612,10 @@ class CCPlanner(object):
     @type      debug: bool
     @param     debug: B{True} if debug info is to be displayed.
     """
-    self.obj = manip_obj
-    self._debug = debug
-    self.robots = robots
-    self.manips = []
+    self.obj        = manip_obj
+    self.env        = self.obj.GetEnv()
+    self.robots     = robots
+    self.manips     = []
     self.basemanips = []
     self.taskmanips = []
     for (i, robot) in enumerate(self.robots):
@@ -623,15 +623,16 @@ class CCPlanner(object):
       self.basemanips.append(orpy.interfaces.BaseManipulation(robot))
       self.taskmanips.append(orpy.interfaces.TaskManipulation(robot))
       robot.SetActiveDOFs(self.manips[i].GetArmIndices())
+
     self._nrobots = len(self.robots)
-
-    self.bimanual_obj_tracker = BimanualObjectTracker(self.robots, manip_obj, debug=self._debug)
-
     self._active_dofs = self.manips[0].GetArmIndices()
     self._vmax = self.robots[0].GetDOFVelocityLimits()[self._active_dofs]
     self._amax = self.robots[0].GetDOFAccelerationLimits()[self._active_dofs]
 
-    self.env = self.obj.GetEnv()
+    self._debug        = debug
+    self._plan_regrasp = plan_regrasp
+    
+    self.bimanual_obj_tracker = BimanualObjectTracker(self.robots, manip_obj, debug=self._debug)
 
   def sample_SE3_config(self):
     """
@@ -872,8 +873,9 @@ class CCPlanner(object):
             manip     = self.manips[i]
             basemanip = self.basemanips[i]
             robot.SetDOFValues([0], [manip.GetArmDOF()])
-            bimanual_regrasp_traj[i] = basemanip.MoveActiveJoints(
-              goal=q_robot, outputtrajobj=True, execute=False)
+            if self._plan_regrasp:
+              bimanual_regrasp_traj[i] = basemanip.MoveActiveJoints(
+                goal=q_robot, outputtrajobj=True, execute=False)
             robot.SetActiveDOFValues(q_robot)
             self.loose_gripper(query, [i])
         vertex._fill_regrasp_traj(bimanual_regrasp_traj)
@@ -903,8 +905,9 @@ class CCPlanner(object):
             manip     = self.manips[i]
             basemanip = self.basemanips[i]
             robot.SetDOFValues([0], [manip.GetArmDOF()])
-            bimanual_regrasp_traj[i] = basemanip.MoveActiveJoints(
-              goal=q_robot_nominal, outputtrajobj=True, execute=False)
+            if self._plan_regrasp:
+              bimanual_regrasp_traj[i] = basemanip.MoveActiveJoints(
+                goal=q_robot_nominal, outputtrajobj=True, execute=False)
             robot.SetActiveDOFValues(q_robot_nominal)
             self.loose_gripper(query, [i])
         vertex._fill_regrasp_traj(bimanual_regrasp_traj)
@@ -1779,8 +1782,6 @@ class CCPlanner(object):
       sleep(refresh_step)
 
   def visualize_regrasp_traj(self, bimanual_traj, speed=1.0):
-    # sleep(0.5)
-    # return
     sampling_step = 0.01
     refresh_step  = sampling_step / speed
 
@@ -1835,6 +1836,7 @@ class CCPlanner(object):
           sleep(refresh_step)
           timestamp_index += 1
       else:
+        timestamp_index -= 1
         self.visualize_regrasp_traj(bimanual_traj, speed=speed)
 
   def shortcut(self, query, maxiter=20):
@@ -1862,22 +1864,45 @@ class CCPlanner(object):
     lie_traj         = query.cctraj.lie_traj
     translation_traj = query.cctraj.translation_traj
     timestamps       = query.cctraj.timestamps[:]
-    left_wpts        = query.cctraj.bimanual_wpts[0][:]
-    right_wpts       = query.cctraj.bimanual_wpts[1][:]
+    bimanual_trajs   = query.cctraj.bimanual_trajs
+
+    wpt_traj_id = []
+    for i, bimanual_traj in enumerate(bimanual_trajs):
+      if type(bimanual_traj) is not dict:
+        wpt_traj_id.append(i)
+    wpt_traj_count = len(wpt_traj_id)
 
     self.loose_gripper(query)
-
     t_begin = time()
-    
-    for i in xrange(maxiter):  
+    for _ in xrange(maxiter):  
       self._output_debug('Iteration {0}'.format(i + 1), color='blue', bold=False)
+      total_length = len(timestamps)
+      wpt_traj_timestamps = {}
+      wpt_traj_weight = {}
+      prev_end_time_index = 0
+      for i in wpt_traj_id:
+        length = len(bimanual_trajs[i][0])
+        wpt_traj_weight[i] = length / (total_length + wpt_traj_count - 1.0)
+        wpt_traj_timestamps[i] = list(np.array(timestamps)[range(
+                                  prev_end_time_index, 
+                                  prev_end_time_index + length)])
+        prev_end_time_index += length - 1
+      
+      # perform shorcut on selected trajectory(wpts) section
+      cur_id = np.random.choice(wpt_traj_weight.keys(), 
+                                p=wpt_traj_weight.values())
+      cur_timestamps = wpt_traj_timestamps[cur_id][:]
+      cur_timestamps_indices = range(len(cur_timestamps))
+      cur_left_wpts  = bimanual_trajs[cur_id][0][:]
+      cur_right_wpts = bimanual_trajs[cur_id][1][:]
 
       # Sample two time instants
-      timestamps_indices = range(len(timestamps))
-      t0_index = _RNG.choice(timestamps_indices[:-min_n_timesteps])
-      t1_index = _RNG.choice(timestamps_indices[t0_index + min_n_timesteps:])
-      t0 = timestamps[t0_index]
-      t1 = timestamps[t1_index]
+      t0_index = _RNG.choice(cur_timestamps_indices[:-min_n_timesteps])
+      t1_index = _RNG.choice(cur_timestamps_indices[t0_index + min_n_timesteps:])
+      t0 = cur_timestamps[t0_index]
+      t1 = cur_timestamps[t1_index]
+      t0_global_index = timestamps.index(t0)
+      t1_global_index = timestamps.index(t1)
 
       # Interpolate a new SE(3) trajectory segment
       new_R0 = lie_traj.EvalRotation(t0)
@@ -1912,9 +1937,13 @@ class CCPlanner(object):
         continue
 
       # Check reachability (object trajectory)
-      passed, bimanual_wpts, new_timestamps = self.check_SE3_traj_reachability(
-        lie.LieTraj([new_R0, new_R1], [new_rot_traj]), new_translation_traj,
-        [left_wpts[t0_index], right_wpts[t0_index]])
+      res = self.check_SE3_traj_reachability(
+              lie.LieTraj([new_R0, new_R1], 
+            [new_rot_traj]), new_translation_traj, 
+            [cur_left_wpts[t0_index], cur_right_wpts[t0_index]])
+      if res[0]: # ignore request for regrasp in shortcut
+        continue
+      passed, bimanual_wpts, new_timestamps = res[1:]
 
       if not passed:
         not_reachable_count += 1
@@ -1923,7 +1952,7 @@ class CCPlanner(object):
 
       # Check continuity between newly generated bimanual_wpts and original one
       eps = 5e-2 # Might be too big!!!
-      if not (utils.distance(bimanual_wpts[0][-1], left_wpts[t1_index]) < eps and utils.distance(bimanual_wpts[1][-1], right_wpts[t1_index]) < eps):
+      if not (utils.distance(bimanual_wpts[0][-1], cur_left_wpts[t1_index]) < eps and utils.distance(bimanual_wpts[1][-1], cur_right_wpts[t1_index]) < eps):
         not_continuous_count += 1
         self._output_debug('Not continuous', color='yellow', bold=False)
         continue
@@ -1937,13 +1966,17 @@ class CCPlanner(object):
                                                     new_translation_traj, 
                                                     t0, t1)
       
-      first_timestamp_chunk       = timestamps[:t0_index + 1]
-      last_timestamp_chunk_offset = timestamps[t1_index]
-      last_timestamp_chunk        = [t - last_timestamp_chunk_offset for t in timestamps[t1_index:]]
+      first_timestamp_chunk       = timestamps[:t0_global_index + 1]
+      last_timestamp_chunk_offset = timestamps[t1_global_index]
+      last_timestamp_chunk        = [t - last_timestamp_chunk_offset for t in timestamps[t1_global_index:]]
 
       timestamps = utils.merge_timestamps_list([first_timestamp_chunk, new_timestamps, last_timestamp_chunk])
-      left_wpts  = utils.merge_wpts_list([left_wpts[:t0_index + 1], bimanual_wpts[0], left_wpts[t1_index:]], eps=eps)            
-      right_wpts = utils.merge_wpts_list([right_wpts[:t0_index + 1], bimanual_wpts[1], right_wpts[t1_index:]], eps=eps)
+      bimanual_trajs[cur_id][0] = utils.merge_wpts_list(
+        [cur_left_wpts[:t0_index + 1], bimanual_wpts[0], 
+        cur_left_wpts[t1_index:]], eps=eps)            
+      bimanual_trajs[cur_id][1] = utils.merge_wpts_list(
+        [cur_right_wpts[:t0_index + 1], bimanual_wpts[1], 
+        cur_right_wpts[t1_index:]], eps=eps)
       
       self._output_debug('Shortcutting successful.', color='green', 
                           bold=False)
@@ -1954,7 +1987,8 @@ class CCPlanner(object):
     self._output_info('Shortcutting done. Total running time : {0} s.'. format(t_end - t_begin), 'green')
     self._output_debug('Successful: {0} times. In collision: {1} times. Not shorter: {2} times. Not reachable: {3} times. Not continuous: {4} times.'.format(successful_count, in_collision_count, not_shorter_count, not_reachable_count, not_continuous_count), 'yellow')
 
-    query.cctraj = CCTrajectory(lie_traj, translation_traj, [left_wpts, right_wpts], timestamps)
+    query.cctraj = CCTrajectory(lie_traj, translation_traj, bimanual_trajs, 
+                                timestamps)
     
   def _enable_robots_collision(self, enable=True):
     """

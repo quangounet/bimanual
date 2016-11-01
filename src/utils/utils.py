@@ -8,6 +8,7 @@ from pylab import *
 from TOPP import Trajectory
 from TOPP import Utilities
 from time import sleep
+from copy import deepcopy
 
 import string
 import numpy as np
@@ -691,13 +692,8 @@ def merge_bimanual_trajs_wpts_list(bimanual_trajs, eps=1e-3):
       bimanual_wpts_list[1].append(bimanual_trajs[i][1])
       i += 1
 
-    if before_regrasp:
-      new_bimanual_trajs.append([merge_wpts_list(bimanual_wpts_list[0]),
-                                 merge_wpts_list(bimanual_wpts_list[1])])
-    else:
-      new_bimanual_trajs.append([merge_wpts_list(bimanual_wpts_list[0])[1:],
-                                 merge_wpts_list(bimanual_wpts_list[1])[1:]])
-    
+    new_bimanual_trajs.append([merge_wpts_list(bimanual_wpts_list[0]),
+                               merge_wpts_list(bimanual_wpts_list[1])])
   return new_bimanual_trajs
 
 def discretize_wpts(q_init, q_final, step_count):

@@ -1922,28 +1922,31 @@ class CCPlanner(object):
         continue
 
       # Check continuity between newly generated bimanual_wpts and original one
-      eps = 1e-3
-      if not (utils.distance(bimanual_wpts[0][0], left_wpts[t0_index]) < eps and utils.distance(bimanual_wpts[1][0], right_wpts[t0_index]) < eps):
+      eps = 5e-2 # Might be too big!!!
+      if not (utils.distance(bimanual_wpts[0][-1], left_wpts[t1_index]) < eps and utils.distance(bimanual_wpts[1][-1], right_wpts[t1_index]) < eps):
         not_continuous_count += 1
         self._output_debug('Not continuous', color='yellow', bold=False)
         continue
 
       # Now the new trajectory passes all tests
       # Replace all the old trajectory segments with the new ones
-      lie_traj = utils.replace_lie_traj_segment(lie_traj, new_lie_traj.trajlist[0],
+      lie_traj = utils.replace_lie_traj_segment(lie_traj, 
+                                                new_lie_traj.trajlist[0],
                                                 t0, t1)            
       translation_traj = utils.replace_traj_segment(translation_traj,
-                                                    new_translation_traj, t0, t1)
+                                                    new_translation_traj, 
+                                                    t0, t1)
       
       first_timestamp_chunk       = timestamps[:t0_index + 1]
       last_timestamp_chunk_offset = timestamps[t1_index]
       last_timestamp_chunk        = [t - last_timestamp_chunk_offset for t in timestamps[t1_index:]]
 
       timestamps = utils.merge_timestamps_list([first_timestamp_chunk, new_timestamps, last_timestamp_chunk])
-      left_wpts  = utils.merge_wpts_list([left_wpts[:t0_index + 1], bimanual_wpts[0], left_wpts[t1_index:]])            
-      right_wpts = utils.merge_wpts_list([right_wpts[:t0_index + 1], bimanual_wpts[1], right_wpts[t1_index:]])
+      left_wpts  = utils.merge_wpts_list([left_wpts[:t0_index + 1], bimanual_wpts[0], left_wpts[t1_index:]], eps=eps)            
+      right_wpts = utils.merge_wpts_list([right_wpts[:t0_index + 1], bimanual_wpts[1], right_wpts[t1_index:]], eps=eps)
       
-      self._output_debug('Shortcutting successful.', color='green', bold=False)
+      self._output_debug('Shortcutting successful.', color='green', 
+                          bold=False)
       successful_count += 1
 
     t_end = time()
@@ -2039,8 +2042,7 @@ class BimanualObjectTracker(object):
     self._jmin    = robots[0].GetDOFLimits()[0][0:self._ndof]
     self._jmax    = robots[0].GetDOFLimits()[1][0:self._ndof]
     self._maxiter = 8
-    self._weight  = 10.
-    self._tol     = 1e-6
+    self._tol     = 1e-7
 
   def update_vmax(self):
     """
@@ -2358,8 +2360,7 @@ class BimanualObjectTracker(object):
       cur_pose[0:4] *= -1.
 
     error = target_pose - cur_pose
-
-    return self._weight * np.dot(error, error)
+    return np.dot(error, error)
     
   def _compute_q_delta(self, robot_index, target_pose, q):
     """    

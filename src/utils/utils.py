@@ -523,11 +523,8 @@ def compute_accumulated_SE3_distance(lie_traj, translation_traj, t0=None, t1=Non
     t0 = 0    
   if t1 is None: 
     t1 = lie_traj.duration
-  if not 0 <= t0 < t1 <= lie_traj.duration:
-    if not np.isclose(0, t0, atol=0.001) or \
-       not np.isclose(t1, lie_traj.duration, atol=0.001):
-      from IPython import embed
-      embed()
+  eps = discr_timestep * 0.2
+  if not (0 - eps) <= t0 < t1 <= (lie_traj.duration + eps):
       raise Exception('Incorrect time stamp.')
 
   accumulated_dist = 0
@@ -663,11 +660,9 @@ def merge_wpts_list(wpts_list, eps=1e-3):
     if not new_wpts == []:
       # Check soundness
       try:
-        assert(distance(W[0][0:6], new_wpts[-1][0:6]) < eps)
+        assert(distance(W[0], new_wpts[-1]) < eps)
       except:
-        print 'W', W[0]
-        print 'new', new_wpts[-1]
-        assert(False)
+        raise Exception('Waypoints not match')
       W.pop(0)
 
     new_wpts = new_wpts + W

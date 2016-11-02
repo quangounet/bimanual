@@ -86,10 +86,10 @@ if __name__ == "__main__":
 
   embed()
   exit(0)
-  import cc_planner_regrasp_complete as ccp 
+  import cc_planner_regrasp as ccp 
 
   ccplanner = ccp.CCPlanner(Lshape, [left_robot, right_robot], 
-                            plan_regrasp=True, debug=False)
+                            plan_regrasp=False, debug=False)
   ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, 
                         q_robots_goal, q_robots_grasp, T_obj_start, nn=2, 
                         step_size=0.5, regrasp_limits=[1, 1])
@@ -111,5 +111,5 @@ if __name__ == "__main__":
       i += 1
   print (time()-t)/rep
 
-  ccplanner.shortcut(ccquery, maxiter=30)
+  ccplanner.shortcut(ccquery, maxiter=40)
   ccplanner.visualize_cctraj(ccquery.cctraj, speed=2)

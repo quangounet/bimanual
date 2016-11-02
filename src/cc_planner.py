@@ -155,7 +155,7 @@ class CCTree(object):
   An RRT tree class for planning closed-chain motion.
   """
 
-  def __init__(self, v_root=None, treetype=FW):
+  def __init__(self, v_root, treetype=FW):
     """
     CCTree constructor.
 
@@ -166,11 +166,8 @@ class CCTree(object):
                      It can be either forward(C{FW}) or backward(C{BW}).
     """
     self.vertices = []
-    self.length = 0
-    if v_root is not None:
-      self.vertices.append(v_root)
-      self.length = 1
-
+    self.vertices.append(v_root)
+    self.length = 1
     self.treetype = treetype
 
   def __len__(self):

@@ -10,6 +10,7 @@ from TOPP import Utilities
 from time import sleep
 from copy import deepcopy
 
+import TOPP
 import string
 import numpy as np
 import lie
@@ -660,9 +661,7 @@ def merge_wpts_list(wpts_list, eps=1e-3):
   for W in wpts_list:
     if not new_wpts == []:
       # Check soundness
-      try:
-        assert(distance(W[0], new_wpts[-1]) < eps)
-      except:
+      if distance(W[0], new_wpts[-1]) > eps:
         raise Exception('Waypoints not match')
       W.pop(0)
 
@@ -729,6 +728,36 @@ def arange(start, end, step):
   if np.isclose(array[-1], end):
     array = array[:-1]
   return array
+
+def reverse_traj(trajectroy):
+  newchunkslist = []
+  for chunk in trajectroy.chunkslist:
+    T = chunk.duration
+    newpoly_list = []
+    for p in chunk.polynomialsvector:
+      # Perform variable changing of p(x) = a_n(x)^n + a_(n-1)(x)^(n-1) + ...
+      # by x = T - y
+        
+      a = p.q # coefficient vector with python convention (highest degree first)
+      # a is a poly1d object
+      r = a.r
+      newr = [T - k for k in r]
+            
+      b = np.poly1d(newr, True) # reconstruct a new polynomial from roots
+      b = b*a.coeffs[0] # multiply back by a_n
+      # *** this multiplication does not commute
+            
+      if (b(0)*a(T) < 0):
+        # correct the coeffs if somehow the polynomial is flipped
+        b = b*-1.0
+
+      # TOPP convention is weak-term-first
+      newpoly = Trajectory.Polynomial(b.coeffs.tolist()[::-1])
+      newpoly_list.append(newpoly)
+    newchunk = Trajectory.Chunk(chunk.duration, newpoly_list)
+    newchunkslist.insert(0, newchunk)
+  
+  return Trajectory.PiecewisePolynomialTrajectory(newchunkslist)
 
 ########################### Manipulator related ###########################
 def compute_endeffector_transform(manip, q):

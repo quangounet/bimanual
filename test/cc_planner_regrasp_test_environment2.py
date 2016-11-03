@@ -95,9 +95,8 @@ if __name__ == "__main__":
   ccplanner.set_query(ccquery)
   res = ccplanner.solve(timeout=20)
 
+  ccplanner.shortcut(ccquery, maxiter=40)
   ccplanner.visualize_cctraj(ccquery.cctraj, speed=1)
-  # ccplanner.shortcut(ccquery, maxiter=20)
-  # ccplanner.visualize_cctraj(ccquery.cctraj, speed=1)
 
 
 

@@ -1,3 +1,5 @@
+# ABANDONED!!!: Unfinished attempt for tree reshaping.
+
 """
 Closed-chain motion planner with multiple regrasping for bimaual setup.
 This version is based on RRT-connect structure.
@@ -27,6 +29,10 @@ NEEDREGRASP = 3
 
 FROMEXTEND  = 0
 FROMCONNECT = 1
+
+NOREGRASP    = 0
+STARTREGRASP = 1
+ENDREGRASP   = 2
 
 IK_CHECK_COLLISION = orpy.IkFilterOptions.CheckEnvCollisions
 IK_IGNORE_COLLISION = orpy.IkFilterOptions.IgnoreSelfCollisions
@@ -112,65 +118,58 @@ class CCTrajectory(object):
     self.bimanual_trajs   = bimanual_trajs
     self.timestamps       = timestamps[:]
 
-class CCConfig(object):
-  """
-  Configuration Class to contain configuration information of
-  both robots and the object in closed-chain motion.
-  """
-
-  def __init__(self, q_robots, SE3_config):
-    """
-    CCConfig constructor.
-
-    @type    q_robots: list
-    @param   q_robots: List of onfigurations of both robots in the bimanual set-up.
-    @type  SE3_config: SE3Config
-    @param SE3_config: Configuration of the manipulated object.
-    """
-    self.q_robots         = np.array(q_robots)
-    self.q_robots_nominal = np.array(q_robots)
-    self.SE3_config       = SE3_config
-
-  def set_q_robots(self, q_robots):
-    self.q_robots = np.array(q_robots)
-
 class CCVertex(object):  
   """
   Vertex of closed-chain motion. It stores all information required
   to generated a RRT tree (C{CCTree}) in this planner.
   """
 
-  def __init__(self, config):
+  def __init__(self, q_robots_start=None, q_robots_end=None,
+               q_robots_inter=None, SE3_config_start=None, 
+               SE3_config_end=None):
     """
     CCVertex constructor.
 
-    @type  config: CCConfig
-    @param config: Configuration of the bimanual set-up in this vertex.
     """
-    self.config = config
-    self.regrasp_count = 0
+    self.q_robots_start   = q_robots_start
+    self.q_robots_inter   = q_robots_inter
+    self.q_robots_end     = q_robots_end
+    self.SE3_config_start = SE3_config_start
+    self.SE3_config_end   = SE3_config_end
+    self.regrasp_count    = 0
 
     # These parameters are to be assigned when the vertex is added to the tree
+    self.regrasp_count         = 0
     self.index                 = None
     self.parent_index          = None
+    self.child_indices         = []
     self.rot_traj              = None # TOPP trajectory
     self.translation_traj      = None # TOPP trajectory
     self.bimanual_wpts         = []
     self.timestamps            = []
     self.level                 = 0
-    self.contain_regrasp       = False
+    self.contain_regrasp       = NOREGRASP
     self.bimanual_regrasp_traj = None
     self.type                  = None
 
-  def _add_regrasp_action(self, q_robots):
+  def _add_regrasp_action(self):
     """
     Add regrasp action to a vertex.
     If the vertex contains regrasp already, replace it.
     """
-    if not self.contain_regrasp:
-      self.contain_regrasp = True
+    if self.contain_regrasp == NOREGRASP:
+      self.contain_regrasp == ENDREGRASP
       self.regrasp_count += 1
-    self.config.set_q_robots(q_robots)
+
+  def _remove_regrasp_action(self, q_robots):
+    """
+    Remvoe regrasp action from a vertex.
+    """
+    if self.contain_regrasp != NOREGRASP:
+      self.contain_regrasp = NOREGRASP
+      self.regrasp_count -= 1
+      self.bimanual_regrasp_traj = None
+      self.config.reset_q_robots(q_robots)
 
   def _fill_regrasp_traj(self, bimanual_regrasp_traj):
     """
@@ -245,12 +244,13 @@ class CCTree(object):
     v_new.timestamps       = timestamps
     v_new.level            = self.database[parent_index].level + 1
 
-    if v_new.contain_regrasp:
+    if v_new.contain_regrasp != NOREGRASP:
       v_new.regrasp_count = self.database[parent_index].regrasp_count + 1
     else:
       v_new.regrasp_count = self.database[parent_index].regrasp_count
 
     self.database.append(v_new, self.treetype)
+    self.database[parent_index].child_indices.append(v_new.index)
     self.end_index = v_new.index
 
   def generate_rot_traj_list(self):
@@ -272,17 +272,16 @@ class CCTree(object):
       rot_traj_list.reverse()
     else:
       while vertex.parent_index is not None:
-        parent = self.database[vertex.parent_index]
-
-        R_beg  = vertex.config.SE3_config.T[0:3, 0:3]
-        R_end  = parent.config.SE3_config.T[0:3, 0:3]
-        qd_beg = vertex.config.SE3_config.qd * -1.0
-        qd_end = parent.config.SE3_config.qd * -1.0
+        R_beg  = vertex.SE3_config_end.T[0:3, 0:3]
+        R_end  = vertex.SE3_config_start.T[0:3, 0:3]
+        qd_beg = vertex.SE3_config_end.qd * -1.0
+        qd_end = vertex.SE3_config_start.qd * -1.0
 
         directed_rot_traj = lie.InterpolateSO3(R_beg, R_end, qd_beg, qd_end,
                                                vertex.rot_traj.duration)
         rot_traj_list.append(directed_rot_traj)
-        vertex = parent
+        vertex = self.database[vertex.parent_index]
+
 
     return rot_traj_list
 
@@ -303,9 +302,9 @@ class CCTree(object):
 
     vertex = self.database[self.end_index]
     while vertex.parent_index is not None:
-      rot_mat_list.append(vertex.config.SE3_config.T[0:3, 0:3])
+      rot_mat_list.append(vertex.SE3_config_end.T[0:3, 0:3])
       vertex = self.database[vertex.parent_index]
-    rot_mat_list.append(self.database[0].config.SE3_config.T[0:3, 0:3])
+    rot_mat_list.append(vertex.SE3_config_end.T[0:3, 0:3])
 
     if self.treetype == FW:
       rot_mat_list.reverse()
@@ -359,21 +358,32 @@ class CCTree(object):
     vertex = self.database[self.end_index]
     if (self.treetype == FW):
       while (vertex.parent_index is not None):
-        if vertex.contain_regrasp:
+        if vertex.contain_regrasp == ENDREGRASP:
           bimanual_trajs.append(vertex.bimanual_regrasp_traj)
         bimanual_trajs.append(vertex.bimanual_wpts)
+        if vertex.contain_regrasp == STARTREGRASP:
+          bimanual_trajs.append(vertex.bimanual_regrasp_traj)
         vertex = self.database[vertex.parent_index]
       bimanual_trajs.reverse()
     else:
       while (vertex.parent_index is not None):
-        if vertex.contain_regrasp:
+        if vertex.contain_regrasp == ENDREGRASP:
           bimanual_regrasp_traj = {0: None, 1: None}
           for key in vertex.bimanual_regrasp_traj.keys():
             if vertex.bimanual_regrasp_traj[key] is not None:
               bimanual_regrasp_traj[key] = orpy.planningutils.ReverseTrajectory(vertex.bimanual_regrasp_traj[key])
           bimanual_trajs.append(bimanual_regrasp_traj)
+
         bimanual_trajs.append([vertex.bimanual_wpts[0][::-1],
                                vertex.bimanual_wpts[1][::-1]])
+
+        if vertex.contain_regrasp == STARTREGRASP:
+          bimanual_regrasp_traj = {0: None, 1: None}
+          for key in vertex.bimanual_regrasp_traj.keys():
+            if vertex.bimanual_regrasp_traj[key] is not None:
+              bimanual_regrasp_traj[key] = orpy.planningutils.ReverseTrajectory(vertex.bimanual_regrasp_traj[key])
+          bimanual_trajs.append(bimanual_regrasp_traj)
+
         vertex = self.database[vertex.parent_index]
 
     return bimanual_trajs
@@ -472,10 +482,10 @@ class CCQuery(object):
     # Initialize v_start and v_goal
     SE3_config_start    = SE3Config.from_matrix(T_obj_start)
     SE3_config_goal     = SE3Config.from_matrix(T_obj_goal)
-    cc_config_start     = CCConfig(q_robots_start, SE3_config_start)
-    cc_config_goal      = CCConfig(q_robots_goal, SE3_config_goal)
-    self.v_start        = CCVertex(cc_config_start)
-    self.v_goal         = CCVertex(cc_config_goal)
+    self.v_start        = CCVertex(q_robots_end=q_robots_start, 
+                                   SE3_config_end=SE3_config_start)
+    self.v_goal         = CCVertex(q_robots_end=q_robots_goal, 
+                                   SE3_config_end=SE3_config_goal)
     self.q_robots_grasp = q_robots_grasp
 
     # Initialize RRTs
@@ -543,10 +553,10 @@ class CCQuery(object):
       self.rot_traj_list.append(self.connecting_rot_traj)
     else:
       duration = self.connecting_rot_traj.duration
-      R_beg  = self.database[self.tree_start.end_index].config.SE3_config.T[0:3, 0:3]
-      R_end  = self.database[self.tree_end.end_index].config.SE3_config.T[0:3, 0:3]
-      qd_beg = self.database[self.tree_start.end_index].config.SE3_config.qd * -1.0
-      qd_end = self.database[self.tree_end.end_index].config.SE3_config.qd * -1.0
+      R_beg  = self.database[self.tree_start.end_index].SE3_config_end.T[0:3, 0:3]
+      R_end  = self.database[self.tree_end.end_index].SE3_config_end.T[0:3, 0:3]
+      qd_beg = self.database[self.tree_start.end_index].SE3_config_end.qd * -1.0
+      qd_end = self.database[self.tree_end.end_index].SE3_config_end.qd * -1.0
       connecting_rot_traj = lie.InterpolateSO3(R_beg, R_end, qd_beg, qd_end,
                                                duration)
       self.rot_traj_list.append(connecting_rot_traj)
@@ -710,25 +720,25 @@ class CCPlanner(object):
     self.bimanual_T_rel = []
     for i in xrange(2):
       self.bimanual_T_rel.append(
-        np.dot(np.linalg.inv(query.v_start.config.SE3_config.T),
+        np.dot(np.linalg.inv(query.v_start.SE3_config_end.T),
         utils.compute_endeffector_transform(self.manips[i], 
-        query.v_start.config.q_robots[i])))
+        query.v_start.q_robots_end[i])))
 
     # Compute object SE3_config at goal if not specified
-    if query.v_goal.config.SE3_config is None:
+    if query.v_goal.SE3_config_end is None:
       T_left_robot_goal = utils.compute_endeffector_transform(self.manips[0],
-                            query.v_goal.config.q_robots[0])
+                            query.v_goal.q_robots_end[0])
       T_obj_goal = np.dot(T_left_robot_goal, 
                           np.linalg.inv(self.bimanual_T_rel[0]))
-      query.v_goal.config.SE3_config = SE3Config.from_matrix(T_obj_goal)
+      query.v_goal.SE3_config_end = SE3Config.from_matrix(T_obj_goal)
 
     # Check start and goal grasping pose
     bimanual_goal_rel_T = []
     for i in xrange(2):
       bimanual_goal_rel_T.append(
-        np.dot(np.linalg.inv(query.v_goal.config.SE3_config.T), 
+        np.dot(np.linalg.inv(query.v_goal.SE3_config_end.T), 
         utils.compute_endeffector_transform(self.manips[i], 
-        query.v_goal.config.q_robots[i])))
+        query.v_goal.q_robots_end[i])))
 
     if not np.isclose(self.bimanual_T_rel, 
                       bimanual_goal_rel_T, atol=1e-3).all():
@@ -792,11 +802,10 @@ class CCPlanner(object):
     if len(res) == 1:
       status = res[0]
       if status == REACHED:
-        if self._plan_regrasp_trajs():
-          query.running_time = time() - t_begin
-          self._finish()
-          return True
-        return False
+        self._plan_regrasp_trajs()
+        query.running_time = time() - t_begin
+        self._finish()
+        return True
       reextend = False
     else:
       robot_index, q_new, q_robots_orig, T_obj_orig = res[1]
@@ -831,19 +840,25 @@ class CCPlanner(object):
       if len(res) == 1:
         status = res[0]
         if status != TRAPPED:
-          self._output_debug('Tree start : {0}; Tree end : {1}'.format(
-                             len(query.tree_start), len(query.tree_end)),
-                             'green')
+          # self._output_debug('Tree start : {0}; Tree end : {1}'.format(
+          #                    len(query.tree_start.vertices), 
+          #                    len(query.tree_end.vertices)), 'green')
 
           res = self._connect()
           if len(res) == 1:
             status = res[0]
             if status == REACHED:
-              if self._plan_regrasp_trajs():
+              res = self._plan_regrasp_trajs()
+              if res is None:
                 query.running_time = time() - t_begin
                 self._finish()
                 return True
-              return False
+              else:
+                tree_type, indices_record = res
+                self._output_info('Regrasp planning failed. Reforming trees.',
+                                  'cyan')
+                return False
+                self._reform_trees(tree_type, indices_record)
             reextend = False
           else:
             robot_index, q_new, q_robots_orig, T_obj_orig = res[1]
@@ -865,6 +880,56 @@ class CCPlanner(object):
     query.running_time = time() - t_begin
     self._finish(success=False, timeout=timeout)
     return False
+
+  def _reform_trees(tree_type, indices_record):
+    query = self._query
+    bad_tree = [query.tree_start, query.tree_end][tree_type]
+    spine_indices = indices_record[::-1]
+
+    v_failed = query.database[spine_indices[0]]
+    # new vertex generated from failed vertex for bad_tree
+    new_config = CCConfig(v_failed.config.q_robots_nominal,
+                          v_failed.config.SE3_config)
+    v_new = CCVertex(new_config)
+    bad_tree.add_vertex(v_new, v_failed.parent_index, v_failed.rot_traj,
+                        v_failed.translation_traj, v_failed.bimanual_wpts,
+                        v_failed.timestamps)
+
+    # transfer all vertices on the spine to good_tree
+    for i, index in enumerate(spine_indices[:-1]):
+      v = query.database[index]
+      v._remove_regrasp_action(v.config.q_robots)
+      v.parent_index = spine_indices[i+1]
+      v.child_indices.remove(spine_indices[i+1])
+      v_parent = query.database[spine_indices[i+1]]
+
+      R_beg = v_parent.config.SE3_config.T[0:3, 0:3]
+      R_end = v.config.SE3_config.T[0:3, 0:3]
+      qd_beg = v_parent.config.SE3_config.qd * -1.0
+      qd_end = v.config.SE3_config.qd * -1.0
+      v.rot_traj = lie.InterpolateSO3(R_beg, R_end, qd_beg, qd_end,
+                                      v_parent.rot_traj.duration)
+      v.translation_traj = reverse_traj(v_parent.translation_traj)
+      v.bimanual_wpts = [v_parent.bimanual_wpts[0][::-1],
+                         v_parent.bimanual_wpts[1][::-1]]
+      v.timestamps = v_parent.timestamps
+
+    v_end = query.database[spine_indices[-1]]
+    v._remove_regrasp_action(v.config.q_robots)
+    v.parent_index = spine_indices[i+1]
+    v.child_indices.remove(spine_indices[i+1])
+    v_parent = query.database[spine_indices[i+1]]
+
+    R_beg = v_parent.config.SE3_config.T[0:3, 0:3]
+    R_end = v.config.SE3_config.T[0:3, 0:3]
+    qd_beg = v_parent.config.SE3_config.qd * -1.0
+    qd_end = v.config.SE3_config.qd * -1.0
+    v.rot_traj = lie.InterpolateSO3(R_beg, R_end, qd_beg, qd_end,
+                                    v_parent.rot_traj.duration)
+    v.translation_traj = reverse_traj(v_parent.translation_traj)
+    v.bimanual_wpts = [v_parent.bimanual_wpts[0][::-1],
+                       v_parent.bimanual_wpts[1][::-1]]
+    v.timestamps = v_parent.timestamps
 
   def _finish(self, success=True, timeout=None):
     """
@@ -893,43 +958,47 @@ class CCPlanner(object):
     query = self._query
     t_begin = time()
     for tree in (query.tree_start, query.tree_end):
+      indices_record = []
       regrasp_count = 0
       vertex = query.database[tree.end_index]
       while (vertex.parent_index is not None):
-        if vertex.contain_regrasp:
+        indices_record.append(vertex.index)
+        if vertex.contain_regrasp != NOREGRASP:
           regrasp_count += 1
           self._output_info('Planning regrasp no.[{0}] for [{1}] tree...'.format(regrasp_count, ['FW', 'BW'][tree.treetype]), 'yellow')
-
           bimanual_regrasp_traj = {0:None, 1:None}
-          # position everything correctly 
-          self.obj.SetTransform(vertex.config.SE3_config.T)
-          for robot, q_robot_nominal in zip(self.robots,
-                                            vertex.config.q_robots_nominal):
-            robot.SetActiveDOFValues(q_robot_nominal)
 
-          # start planning
-          for i in xrange(self._nrobots):
-            q_robot         = vertex.config.q_robots[i]
-            q_robot_nominal = vertex.config.q_robots_nominal[i]
-            if not np.isclose(q_robot, q_robot_nominal).all():
-              robot     = self.robots[i]
-              manip     = self.manips[i]
-              basemanip = self.basemanips[i]
-              robot.SetDOFValues([0], [manip.GetArmDOF()])
-              try:
-                if self._plan_regrasp:
-                  bimanual_regrasp_traj[i] = basemanip.MoveActiveJoints(
-                    goal=q_robot, outputtrajobj=True, execute=False)
-                robot.SetActiveDOFValues(q_robot)
-                self.loose_gripper(query, [i])
-              except: # planning failed
-                self._output_info('Planning regrasp failed', 'red')
-                self.loose_gripper(query)
-                return False
+          if vertex.contain_regrasp == ENDREGRASP:
+            # position everything correctly 
+            self.obj.SetTransform(vertex.SE3_config_end.T)
+            for robot, q_robot_inter in zip(self.robots,
+                                            vertex.q_robots_inter):
+              robot.SetActiveDOFValues(q_robot_inter)
+            # start planning
+            for i in xrange(self._nrobots):
+              q_robot_end   = vertex.q_robots_end[i]
+              q_robot_inter = vertex.q_robots_inter[i]
+              if not np.isclose(q_robot_inter, q_robot_end).all():
+                robot     = self.robots[i]
+                manip     = self.manips[i]
+                basemanip = self.basemanips[i]
+                robot.SetDOFValues([0], [manip.GetArmDOF()])
+                try:
+                  if self._plan_regrasp:
+                    bimanual_regrasp_traj[i] = basemanip.MoveActiveJoints(
+                      goal=q_robot_end, outputtrajobj=True, execute=False)
+                  robot.SetActiveDOFValues(q_robot_end)
+                  self.loose_gripper(query, [i])
+                except: # planning failed
+                  self.loose_gripper(query)
+                  return tree.type, indices_record
+          elif vertex.contain_regrasp == STARTREGRASP:
+            raise Exception('Should has been planned.')
+                
           vertex._fill_regrasp_traj(bimanual_regrasp_traj)
         vertex = query.database[vertex.parent_index]
     query.regrasp_planning_time += time() - t_begin
-    return True
+    return None
 
   def reset_config(self, query):
     """
@@ -942,10 +1011,10 @@ class CCPlanner(object):
     @param query: Query to be used to extract starting configuration.
     """
     for i in xrange(self._nrobots):
-      self.robots[i].SetActiveDOFValues(query.v_start.config.q_robots[i])
+      self.robots[i].SetActiveDOFValues(query.v_start.q_robots_end[i])
       self.robots[i].SetDOFValues([query.q_robots_grasp[i]],
                                   [self.manips[i].GetArmDOF()])
-    self.obj.SetTransform(query.v_start.config.SE3_config.T)
+    self.obj.SetTransform(query.v_start.SE3_config_end.T)
 
   def _extend(self, SE3_config, reextend=False, reextend_info=None):
     """
@@ -979,10 +1048,10 @@ class CCPlanner(object):
       self._output_debug('index:{0}, nnindices:{1}'.format(index, nnindices))
       v_near = query.database[index]
       
-      q_beg  = v_near.config.SE3_config.q
-      qd_beg = v_near.config.SE3_config.qd
-      p_beg  = v_near.config.SE3_config.p
-      pd_beg = v_near.config.SE3_config.pd
+      q_beg  = v_near.SE3_config_end.q
+      qd_beg = v_near.SE3_config_end.qd
+      p_beg  = v_near.SE3_config_end.p
+      pd_beg = v_near.SE3_config_end.pd
 
       q_end = SE3_config.q
       p_end = SE3_config.p
@@ -995,7 +1064,7 @@ class CCPlanner(object):
       else:
         # Check if SE3_config is too far from v_near.SE3_config
         SE3_dist = utils.SE3_distance(SE3_config.T, 
-                                      v_near.config.SE3_config.T,
+                                      v_near.SE3_config_end.T,
                                       1.0 / np.pi, 1.0)
         if SE3_dist <= query.step_size:
           status = REACHED
@@ -1055,7 +1124,7 @@ class CCPlanner(object):
       
       # Check reachability (object trajectory)
       res = self.check_SE3_traj_reachability(lie.LieTraj([R_beg, R_end],
-              [rot_traj]), translation_traj, v_near.config.q_robots)
+              [rot_traj]), translation_traj, v_near.q_robots_end)
       if res[0] is False:
         passed, bimanual_wpts, timestamps = res[1:]
         if not passed:
@@ -1068,14 +1137,22 @@ class CCPlanner(object):
         self._output_debug('Successful : new vertex generated', 
                            color='green', bold=False)
         new_q_robots = [wpts[-1] for wpts in bimanual_wpts] 
-        new_config = CCConfig(new_q_robots, new_SE3_config)
-        v_new = CCVertex(new_config)
 
         if reextend:
           q_robots_real = np.array(new_q_robots) # post regrasp configs
           q_robots_real[reextend_info[0]] = reextend_info[1]
-          v_new._add_regrasp_action(q_robots_real)
+          v_new = CCVertex(q_robots_start=v_near.q_robots_end,
+                           q_robots_inter=new_q_robots, 
+                           q_robots_end=q_robots_real,
+                           SE3_config_start=v_near.SE3_config_end,
+                           SE3_config_end=new_SE3_config)
           self._output_debug('Adding regrasping', 'yellow')
+          v_new._add_regrasp_action()
+        else:
+          v_new = CCVertex(q_robots_start=v_near.q_robots_end,
+                           q_robots_end=new_q_robots,
+                           SE3_config_start=v_near.SE3_config_end,
+                           SE3_config_end=new_SE3_config)
 
         cur_tree.add_vertex(v_new, v_near.index, rot_traj,
                             translation_traj, bimanual_wpts, timestamps)
@@ -1114,26 +1191,26 @@ class CCPlanner(object):
       cur_regrasp_limit = query.regrasp_limits[FW]
 
     v_test = query.database[cur_tree_goal.end_index]
-    nnindices = self._nearest_neighbor_indices(v_test.config.SE3_config,
+    nnindices = self._nearest_neighbor_indices(v_test.SE3_config_end,
                                                cur_extend_dir)
     status = TRAPPED
     for index in nnindices:
       v_near = query.database[index]
 
       while True:
-        q_beg  = v_near.config.SE3_config.q
-        qd_beg = v_near.config.SE3_config.qd
-        p_beg  = v_near.config.SE3_config.p
-        pd_beg = v_near.config.SE3_config.pd
+        q_beg  = v_near.SE3_config_end.q
+        qd_beg = v_near.SE3_config_end.qd
+        p_beg  = v_near.SE3_config_end.p
+        pd_beg = v_near.SE3_config_end.pd
         
-        q_end  = v_test.config.SE3_config.q
-        qd_end = v_test.config.SE3_config.qd
-        p_end  = v_test.config.SE3_config.p
-        pd_end = v_test.config.SE3_config.pd
+        q_end  = v_test.SE3_config_end.q
+        qd_end = v_test.SE3_config_end.qd
+        p_end  = v_test.SE3_config_end.p
+        pd_end = v_test.SE3_config_end.pd
         
         # Check distance
-        SE3_dist = utils.SE3_distance(v_test.config.SE3_config.T, 
-                                      v_near.config.SE3_config.T, 
+        SE3_dist = utils.SE3_distance(v_test.SE3_config_end.T, 
+                                      v_near.SE3_config_end.T, 
                                       1.0 / np.pi, 1.0)
         if SE3_dist <= query.step_size: # connect directly
           # Interpolate the object trajectory
@@ -1164,7 +1241,7 @@ class CCPlanner(object):
           
           # Check reachability (object trajectory)
           res = self.check_SE3_traj_reachability(lie.LieTraj([R_beg, R_end], 
-                  [rot_traj]), translation_traj, v_near.config.q_robots)
+                  [rot_traj]), translation_traj, v_near.q_robots_end)
           if res[0] is False:
             passed, bimanual_wpts, timestamps = res[1:]
             if not passed:
@@ -1175,17 +1252,40 @@ class CCPlanner(object):
             # Check similarity of terminal IK solutions
             eps = 1e-3
             need_regrasp = False
+            quit = False
             for i in xrange(2):
-              if not utils.distance(v_test.config.q_robots_nominal[i], 
-                        bimanual_wpts[i][-1]) < eps:
-                self._output_debug('IK discrepancy (robot {0})'.format(i), 
-                                    bold=False)
-                need_regrasp = True
-            if need_regrasp:            
+              if v_test.contain_regrasp == NOREGRASP:
+                if not utils.distance(v_test.q_robots_end[i], 
+                                      bimanual_wpts[i][-1]) < eps:
+                  self._output_debug('IK discrepancy (robot {0})'.format(i), 
+                                      bold=False)
+                  need_regrasp = True
+              elif v_test.contain_regrasp == ENDREGRASP:
+                if not utils.distance(v_test.q_robots_inter[i], 
+                                      bimanual_wpts[i][-1]) < eps:
+                  self._output_debug('IK discrepancy (robot {0})'.format(i), 
+                                      bold=False)
+                  need_regrasp = True
+              elif v_test.contain_regrasp == STARTREGRASP:
+                if not utils.distance(v_test.q_robots_end[i], 
+                                      bimanual_wpts[i][-1]) < eps:
+                  self._output_debug('IK discrepancy (robot {0})'.format(i), 
+                                      bold=False)
+                  quit = True
+                  need_regrasp = True
+            
+            if need_regrasp:       
+              if quit: 
+                self._output_debug('TRAPPED : vertex already contain one '
+                                   'regrasp', bold=False)
+                break     
+
               self._output_debug('Adding regrasp action', 'yellow')
-              q_robots_real = np.array([bimanual_wpts[0][-1],
-                                        bimanual_wpts[1][-1]])
-              v_test._add_regrasp_action(q_robots_real)
+              q_robots_end = np.array([bimanual_wpts[0][-1],
+                                       bimanual_wpts[1][-1]])
+              v_test.q_robots_inter = v_test.q_robots_end
+              v_test.q_robots_end = q_robots_end
+              v_test._add_regrasp_action()
 
             # Now the connection is successful
             cur_tree_extend.end_index         = v_near.index
@@ -1256,7 +1356,7 @@ class CCPlanner(object):
             break
 
           # Check reachability (object trajectory)
-          res = self.check_SE3_traj_reachability(lie.LieTraj([R_beg, R_end], [rot_traj]), translation_traj, v_near.config.q_robots)
+          res = self.check_SE3_traj_reachability(lie.LieTraj([R_beg, R_end], [rot_traj]), translation_traj, v_near.q_robots_end)
           if res[0] is False: # no need regrasp
             passed, bimanual_wpts, timestamps = res[1:]
             if not passed:
@@ -1269,8 +1369,10 @@ class CCPlanner(object):
             self._output_debug('Advanced : new vertex generated', 
                                color='green', bold=False)
             new_q_robots = [wpts[-1] for wpts in bimanual_wpts] 
-            new_config = CCConfig(new_q_robots, new_SE3_config)
-            v_new = CCVertex(new_config)
+            v_new = CCVertex(q_robots_start=v_near.q_robots_end,
+                             q_robots_end=new_q_robots,
+                             SE3_config_start=v_near.SE3_config_end,
+                             SE3_config_end=new_SE3_config)
             cur_tree_extend.add_vertex(v_new, v_near.index, rot_traj,
                                        translation_traj, bimanual_wpts,
                                        timestamps)
@@ -1417,7 +1519,7 @@ class CCPlanner(object):
       nv = len(self._query.tree_end)
 
     cur_tree_vertices = np.array([v for v in database.vertices if v.type == treetype])
-    distance_list = [utils.SE3_distance(SE3_config.T, v.config.SE3_config.T, 
+    distance_list = [utils.SE3_distance(SE3_config.T, v.SE3_config_end.T, 
                       1.0 / np.pi, 1.0) for v in cur_tree_vertices]
     distance_heap = heap.Heap(distance_list)
         

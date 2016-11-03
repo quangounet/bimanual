@@ -89,7 +89,7 @@ if __name__ == "__main__":
   import cc_planner_regrasp as ccp 
 
   ccplanner = ccp.CCPlanner(Lshape, [left_robot, right_robot], 
-                            plan_regrasp=False, debug=False)
+                            plan_regrasp=True, debug=False)
   ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, 
                         q_robots_goal, q_robots_grasp, T_obj_start, nn=2, 
                         step_size=0.5, regrasp_limits=[1, 1])

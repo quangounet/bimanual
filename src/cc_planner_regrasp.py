@@ -153,6 +153,7 @@ class CCVertex(object):
     # These parameters are to be assigned when the vertex is added to the tree
     self.index                 = None
     self.parent_index          = None
+    self.child_indices         = []
     self.rot_traj              = None # TOPP trajectory
     self.translation_traj      = None # TOPP trajectory
     self.bimanual_wpts         = []
@@ -160,6 +161,7 @@ class CCVertex(object):
     self.level                 = 0
     self.contain_regrasp       = False
     self.bimanual_regrasp_traj = None
+    self.filled                = False
     self.type                  = None
 
   def _add_regrasp_action(self, q_robots):
@@ -171,12 +173,14 @@ class CCVertex(object):
       self.contain_regrasp = True
       self.regrasp_count += 1
     self.config.set_q_robots(q_robots)
+    self.bimanual_regrasp_traj = {0: None, 1: None}
 
   def _fill_regrasp_traj(self, bimanual_regrasp_traj):
     """
     Add regrasp traj to a vertex containing regrasp action.
     """
     self.bimanual_regrasp_traj = dict(bimanual_regrasp_traj)
+    self.filled = True
 
 class CCVertexDatabase(object):
   def __init__(self):
@@ -192,6 +196,12 @@ class CCVertexDatabase(object):
     vertex.type = vertex_type
     vertex.index = len(self.vertices)
     self.vertices.append(vertex)  
+
+  def remove_child(self, index):
+    v_parent = self.vertices[index]
+    for child_index in v_parent.child_indices:
+      self.remove_child(child_index)
+    v_parent.type = None # abandoned vertex has type of neither FW or BW
 
 class CCTree(object):  
   """
@@ -251,6 +261,7 @@ class CCTree(object):
       v_new.regrasp_count = self.database[parent_index].regrasp_count
 
     self.database.append(v_new, self.treetype)
+    self.database[parent_index].child_indices.append(v_new.index)
     self.end_index = v_new.index
 
   def generate_rot_traj_list(self):
@@ -305,7 +316,7 @@ class CCTree(object):
     while vertex.parent_index is not None:
       rot_mat_list.append(vertex.config.SE3_config.T[0:3, 0:3])
       vertex = self.database[vertex.parent_index]
-    rot_mat_list.append(self.database[0].config.SE3_config.T[0:3, 0:3])
+    rot_mat_list.append(vertex.config.SE3_config.T[0:3, 0:3])
 
     if self.treetype == FW:
       rot_mat_list.reverse()
@@ -796,7 +807,6 @@ class CCPlanner(object):
           query.running_time = time() - t_begin
           self._finish()
           return True
-        return False
       reextend = False
     else:
       robot_index, q_new, q_robots_orig, T_obj_orig = res[1]
@@ -843,7 +853,6 @@ class CCPlanner(object):
                 query.running_time = time() - t_begin
                 self._finish()
                 return True
-              return False
             reextend = False
           else:
             robot_index, q_new, q_robots_orig, T_obj_orig = res[1]
@@ -891,13 +900,28 @@ class CCPlanner(object):
   def _plan_regrasp_trajs(self):
     self._output_info('Global path found.', 'yellow')
     query = self._query
+    planning_success = True
     t_begin = time()
+
     for tree in (query.tree_start, query.tree_end):
       regrasp_count = 0
+      cur_tree_success = True
       vertex = query.database[tree.end_index]
-      while (vertex.parent_index is not None):
+      spine_indices = []
+      while (vertex.parent_index) is not None:
+        spine_indices.append(vertex.index)
+        vertex = query.database[vertex.parent_index]
+      spine_indices = spine_indices[::-1]
+
+      for index in spine_indices:
+        vertex = query.database[index]
         if vertex.contain_regrasp:
           regrasp_count += 1
+          if vertex.filled:
+            self._output_info('Planning regrasp no.[{0}] for [{1}] tree' 
+                              ' skipped'.format(regrasp_count, 
+                                ['FW', 'BW'][tree.treetype]), 'cyan')
+            continue
           self._output_info('Planning regrasp no.[{0}] for [{1}] tree...'.format(regrasp_count, ['FW', 'BW'][tree.treetype]), 'yellow')
 
           bimanual_regrasp_traj = {0:None, 1:None}
@@ -911,7 +935,7 @@ class CCPlanner(object):
           for i in xrange(self._nrobots):
             q_robot         = vertex.config.q_robots[i]
             q_robot_nominal = vertex.config.q_robots_nominal[i]
-            if not np.isclose(q_robot, q_robot_nominal).all():
+            if not np.isclose(q_robot, q_robot_nominal, rtol=1e-3).all():
               robot     = self.robots[i]
               manip     = self.manips[i]
               basemanip = self.basemanips[i]
@@ -923,13 +947,17 @@ class CCPlanner(object):
                 robot.SetActiveDOFValues(q_robot)
                 self.loose_gripper(query, [i])
               except: # planning failed
-                self._output_info('Planning regrasp failed', 'red')
+                self._output_info('Planning failed, cleaning tree...', 'red')
                 self.loose_gripper(query)
-                return False
+                query.database.remove_child(vertex.index)
+                planning_success = False
+                cur_tree_success = False
+                break
+          if not cur_tree_success:
+            break
           vertex._fill_regrasp_traj(bimanual_regrasp_traj)
-        vertex = query.database[vertex.parent_index]
     query.regrasp_planning_time += time() - t_begin
-    return True
+    return planning_success
 
   def reset_config(self, query):
     """

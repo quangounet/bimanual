@@ -92,13 +92,15 @@ if __name__ == "__main__":
                             plan_regrasp=True, debug=False)
   ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, 
                         q_robots_goal, q_robots_grasp, T_obj_start, nn=2, 
-                        step_size=0.5, regrasp_limits=[1, 1])
+                        step_size=0.5, regrasp_limits=[2, 2])
   ccplanner.set_query(ccquery)
   res = ccplanner.solve(timeout=100)
 
-  rep = 100
+  rep = 50
   from time import time
-  ccplanner = ccp.CCPlanner(Lshape, [left_robot, right_robot], debug=False)
+  import cc_planner_regrasp as ccp 
+  ccplanner = ccp.CCPlanner(Lshape, [left_robot, right_robot], 
+                            plan_regrasp=False, debug=False)
   t = time() 
   i = 0
   while i < rep:
@@ -106,7 +108,7 @@ if __name__ == "__main__":
                           q_robots_goal, q_robots_grasp, T_obj_start, nn=2, 
                           step_size=0.5, regrasp_limits=[1, 1])
     ccplanner.set_query(ccquery)
-    res = ccplanner.solve(timeout=20)
+    res = ccplanner.solve(timeout=30)
     if res:
       i += 1
   print (time()-t)/rep

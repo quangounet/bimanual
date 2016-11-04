@@ -92,7 +92,7 @@ if __name__ == "__main__":
                             plan_regrasp=True, debug=False)
   ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, 
                         q_robots_goal, q_robots_grasp, T_obj_start, nn=2, 
-                        step_size=0.5, regrasp_limits=[2, 2])
+                        step_size=0.5, regrasp_limits=[1, 1])
   ccplanner.set_query(ccquery)
   res = ccplanner.solve(timeout=100)
 
@@ -100,7 +100,7 @@ if __name__ == "__main__":
   from time import time
   import cc_planner_regrasp as ccp 
   ccplanner = ccp.CCPlanner(Lshape, [left_robot, right_robot], 
-                            plan_regrasp=False, debug=False)
+                            plan_regrasp=True, debug=False)
   t = time() 
   i = 0
   while i < rep:
@@ -115,3 +115,100 @@ if __name__ == "__main__":
 
   ccplanner.shortcut(ccquery, maxiter=40)
   ccplanner.visualize_cctraj(ccquery.cctraj, speed=2)
+
+
+
+
+left_robot.SetActiveDOFValues(np.array([1.3286037675828692, 1.61926880978681, -0.78215209411198694, 4.0283431951051281, 0.93621987466452217, -1.0108507059372083]))
+
+right_robot.SetActiveDOFValues([-0.89919974486785126,  0.87162093934540275,  1.2360258804531066,  -0.47815594937409694,  -1.5946827762340383,  0.090781819060121921])
+
+q_robot = np.array([2.2423920808053284,  -2.0633626740460622,  1.2360199965182757,  -4.1702100454797009,  -0.56691154243021036,  1.0538235669215026])
+
+basemanip = right_basemanip
+robot = right_robot
+c = robot.GetController()
+
+Lshape.SetTransform(np.array(
+  [[ 0.496487317 , -0.5973714785,  0.6297996989,  0.3379715483],
+   [ 0.7947580193,  0.6046029621, -0.0530560928, -0.1244274658],
+   [-0.3490845669,  0.5268800384,  0.7749434755,  0.6898874894],
+   [ 0.          ,  0.          ,  0.          ,  1.          ]]))
+
+left_taskmanip.ReleaseFingers()
+
+right_taskmanip.ReleaseFingers()
+
+
+from time import time
+t = time()
+traj = basemanip.MoveActiveJoints(goal=q_robot, execute=False, outputtrajobj=True)
+print time()-t
+
+
+t = time()
+params = orpy.Planner.PlannerParameters()
+params.SetRobotActiveJoints(robot)
+params.SetGoalConfig(q_robot) # set goal to all ones
+# forces parabolic planning with 40 iterations
+params.SetExtraParameters("""<_postprocessing planner="parabolicsmoother">
+    <_nmaxiterations>1</_nmaxiterations>
+</_postprocessing>""")
+params.SetExtraParameters("<_postprocessing></_postprocessing>")
+planner=orpy.RaveCreatePlanner(env,'birrt')
+planner.InitPlan(robot, params)
+traj = orpy.RaveCreateTrajectory(env,'')
+planner.PlanPath(traj)
+print time()-t
+
+c.SetPath(traj)
+robot.SetActiveDOFValues([-0.89919974486785126,  0.87162093934540275,  1.2360258804531066,  -0.47815594937409694,  -1.5946827762340383,  0.090781819060121921])
+
+
+###############################################
+
+
+left_robot.SetActiveDOFValues(np.array([1.1179185740387636, 0.9386752793904507, 0.80032749713981743, -2.1946447274984533, 1.0806177078710155, 1.5873185270739358]))
+
+right_robot.SetActiveDOFValues(np.array([-1.3452288403551229, 0.38678944640524932, 1.012264320407571, -1.1359528270330019, -1.476739947025685, 2.8216469080645283]))
+
+q_robot = np.array([1.1179190426593697, 1.6992327458331573, -0.73367709448158691, 4.6567772140613615, 0.79973950741550781, 0.67549521798187973])
+
+basemanip = left_basemanip
+robot = left_robot
+c = robot.GetController()
+
+Lshape.SetTransform(np.array(
+      [[-0.4660339977, -0.0091527126,  0.8847194702,  0.4715947041],
+       [ 0.3627313889, -0.9140248958,  0.1816161591,  0.0891404323],
+       [ 0.8069933411,  0.4055548269,  0.4292866523,  0.538749835 ],
+       [ 0.          ,  0.          ,  0.          ,  1.          ]]))
+
+left_taskmanip.ReleaseFingers()
+
+right_taskmanip.ReleaseFingers()
+
+
+from time import time
+t = time()
+try: traj = basemanip.MoveActiveJoints(goal=q_robot, execute=False, outputtrajobj=True)
+except:
+  print time()-t
+
+
+t = time()
+params = orpy.Planner.PlannerParameters()
+params.SetRobotActiveJoints(robot)
+params.SetGoalConfig(q_robot) # set goal to all ones
+# forces parabolic planning with 40 iterations
+params.SetExtraParameters("""<_postprocessing planner="parabolicsmoother">
+    <_nmaxiterations>40</_nmaxiterations>
+</_postprocessing>""")
+planner=orpy.RaveCreatePlanner(env,'birrt')
+planner.InitPlan(robot, params)
+traj = orpy.RaveCreateTrajectory(env,'')
+planner.PlanPath(traj)
+print time()-t
+
+c.SetPath(traj)
+robot.SetActiveDOFValues([-0.89919974486785126,  0.87162093934540275,  1.2360258804531066,  -0.47815594937409694,  -1.5946827762340383,  0.090781819060121921])

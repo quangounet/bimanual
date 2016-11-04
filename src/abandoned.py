@@ -978,7 +978,7 @@ class CCPlanner(object):
             for i in xrange(self._nrobots):
               q_robot_end   = vertex.q_robots_end[i]
               q_robot_inter = vertex.q_robots_inter[i]
-              if not np.isclose(q_robot_inter, q_robot_end).all():
+              if not np.isclose(q_robot_inter, q_robot_end, rtol=1e-3).all():
                 robot     = self.robots[i]
                 manip     = self.manips[i]
                 basemanip = self.basemanips[i]

@@ -28,9 +28,10 @@ NEEDREGRASP = 3
 FROMEXTEND  = 0
 FROMCONNECT = 1
 
-IK_CHECK_COLLISION = orpy.IkFilterOptions.CheckEnvCollisions
+IK_CHECK_COLLISION  = orpy.IkFilterOptions.CheckEnvCollisions
 IK_IGNORE_COLLISION = orpy.IkFilterOptions.IgnoreSelfCollisions
-TrajectoryFromStr = TOPP.Trajectory.PiecewisePolynomialTrajectory.FromString
+HAS_SOLUTION        = orpy.PlannerStatus.HasSolution
+TrajectoryFromStr   = TOPP.Trajectory.PiecewisePolynomialTrajectory.FromString
 _RNG = random.SystemRandom()
 
 class SE3Config(object):
@@ -688,6 +689,7 @@ class CCPlanner(object):
     self._plan_regrasp = plan_regrasp
     
     self.bimanual_obj_tracker = BimanualObjectTracker(self.robots, manip_obj, debug=self._debug)
+    self.rave_planner = orpy.RaveCreatePlanner(self.env, 'birrt')
 
   def sample_SE3_config(self):
     """
@@ -937,22 +939,31 @@ class CCPlanner(object):
             q_robot_nominal = vertex.config.q_robots_nominal[i]
             if not np.isclose(q_robot, q_robot_nominal, rtol=1e-3).all():
               robot     = self.robots[i]
-              manip     = self.manips[i]
-              basemanip = self.basemanips[i]
-              robot.SetDOFValues([0], [manip.GetArmDOF()])
-              try:
-                if self._plan_regrasp:
-                  bimanual_regrasp_traj[i] = basemanip.MoveActiveJoints(
-                    goal=q_robot, outputtrajobj=True, execute=False)
-                robot.SetActiveDOFValues(q_robot)
-                self.loose_gripper(query, [i])
-              except: # planning failed
-                self._output_info('Planning failed, cleaning tree...', 'red')
-                self.loose_gripper(query)
-                query.database.remove_child(vertex.index)
-                planning_success = False
-                cur_tree_success = False
-                break
+              robot.SetDOFValues([0], [self.manips[i].GetArmDOF()])
+              if self._plan_regrasp:
+                params = orpy.Planner.PlannerParameters()
+                params.SetRobotActiveJoints(robot)
+                params.SetGoalConfig(q_robot) # set goal to all ones
+                params.SetExtraParameters(
+                  """
+                  <_nmaxiterations>2000</_nmaxiterations>
+                  <_postprocessing planner="linearsmoother">
+                  <_nmaxiterations>1</_nmaxiterations></_postprocessing>
+                  """)
+                self.rave_planner.InitPlan(robot, params)
+                traj = orpy.RaveCreateTrajectory(self.env, '')
+                if self.rave_planner.PlanPath(traj) == HAS_SOLUTION:
+                  bimanual_regrasp_traj[i] = traj
+                  robot.SetActiveDOFValues(q_robot)
+                  self.loose_gripper(query, [i])
+                else:
+                  self._output_info('Planning failed, cleaning tree...', 
+                                    'red')
+                  self.loose_gripper(query)
+                  query.database.remove_child(vertex.index)
+                  planning_success = False
+                  cur_tree_success = False
+                  break
           if not cur_tree_success:
             break
           vertex._fill_regrasp_traj(bimanual_regrasp_traj)

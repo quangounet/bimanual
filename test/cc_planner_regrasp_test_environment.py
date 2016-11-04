@@ -150,11 +150,10 @@ t = time()
 params = orpy.Planner.PlannerParameters()
 params.SetRobotActiveJoints(robot)
 params.SetGoalConfig(q_robot) # set goal to all ones
-# forces parabolic planning with 40 iterations
-params.SetExtraParameters("""<_postprocessing planner="parabolicsmoother">
+params.SetExtraParameters("""<_postprocessing planner="linearsmoother">
     <_nmaxiterations>1</_nmaxiterations>
 </_postprocessing>""")
-params.SetExtraParameters("<_postprocessing></_postprocessing>")
+# params.SetExtraParameters("<_postprocessing></_postprocessing>")
 planner=orpy.RaveCreatePlanner(env,'birrt')
 planner.InitPlan(robot, params)
 traj = orpy.RaveCreateTrajectory(env,'')
@@ -163,6 +162,7 @@ print time()-t
 
 c.SetPath(traj)
 robot.SetActiveDOFValues([-0.89919974486785126,  0.87162093934540275,  1.2360258804531066,  -0.47815594937409694,  -1.5946827762340383,  0.090781819060121921])
+
 
 
 ###############################################
@@ -201,9 +201,10 @@ params = orpy.Planner.PlannerParameters()
 params.SetRobotActiveJoints(robot)
 params.SetGoalConfig(q_robot) # set goal to all ones
 # forces parabolic planning with 40 iterations
-params.SetExtraParameters("""<_postprocessing planner="parabolicsmoother">
-    <_nmaxiterations>40</_nmaxiterations>
-</_postprocessing>""")
+# params.SetExtraParameters("""<_postprocessing planner="parabolicsmoother">
+#     <_nmaxiterations>40</_nmaxiterations>
+# </_postprocessing>""")
+params.SetExtraParameters("""<_nmaxiterations>5000</_nmaxiterations><_postprocessing></_postprocessing>""")
 planner=orpy.RaveCreatePlanner(env,'birrt')
 planner.InitPlan(robot, params)
 traj = orpy.RaveCreateTrajectory(env,'')
@@ -211,4 +212,4 @@ planner.PlanPath(traj)
 print time()-t
 
 c.SetPath(traj)
-robot.SetActiveDOFValues([-0.89919974486785126,  0.87162093934540275,  1.2360258804531066,  -0.47815594937409694,  -1.5946827762340383,  0.090781819060121921])
+robot.SetActiveDOFValues(np.array([1.1179185740387636, 0.9386752793904507, 0.80032749713981743, -2.1946447274984533, 1.0806177078710155, 1.5873185270739358]))

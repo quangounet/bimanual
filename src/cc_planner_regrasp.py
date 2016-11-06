@@ -946,7 +946,7 @@ class CCPlanner(object):
                 params.SetGoalConfig(q_robot) # set goal to all ones
                 params.SetExtraParameters(
                   """
-                  <_nmaxiterations>2000</_nmaxiterations>
+                  <_nmaxiterations>200</_nmaxiterations>
                   <_postprocessing planner="linearsmoother">
                   <_nmaxiterations>1</_nmaxiterations></_postprocessing>
                   """)
@@ -1918,7 +1918,6 @@ class BimanualObjectTracker(object):
     for i in xrange(self._nrobots):
       for j in xrange(self._ndof):
         if abs(q_robots[i][j] - q_robots_prev[i][j]) > self._jd_max[j]:
-          self._output_debug('Move too FFFAASSSTTTT', 'red')
           return False
 
     # Update environment for collision checking

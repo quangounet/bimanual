@@ -680,13 +680,13 @@ def merge_bimanual_trajs_wpts_list(bimanual_trajs, eps=1e-3):
   before_regrasp = True
   i = 0
   while i < traj_num:
-    while type(bimanual_trajs[i]) is dict:
+    while type(bimanual_trajs[i]) is not list:
       new_bimanual_trajs.append(bimanual_trajs[i])
       before_regrasp = False
       i += 1
 
     bimanual_wpts_list = [[], []]
-    while (i < traj_num) and (type(bimanual_trajs[i]) is not dict):
+    while (i < traj_num) and (type(bimanual_trajs[i]) is list):
       bimanual_wpts_list[0].append(bimanual_trajs[i][0])
       bimanual_wpts_list[1].append(bimanual_trajs[i][1])
       i += 1

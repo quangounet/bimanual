@@ -20,6 +20,9 @@ from IPython import embed
 FW = 0
 BW = 1
 
+LR = 0
+RL = 1
+
 REACHED     = 0
 ADVANCED    = 1
 TRAPPED     = 2
@@ -117,6 +120,18 @@ class CCTrajectory(object):
     self.bimanual_trajs   = bimanual_trajs
     self.timestamps       = timestamps[:]
 
+class BimanualRegraspTrajectory(object):
+  def __init__(self, trajs={0: None, 1: None}, order=LR):
+    self.trajs = dict(trajs)
+    self.order = order
+
+  def reverse(self):
+    new_bimanual_regrasp_traj = BimanualRegraspTrajectory(order=1-self.order)
+    for key in self.trajs.keys():
+      if self.trajs[key] is not None:
+        new_bimanual_regrasp_traj.trajs[key] = orpy.planningutils.ReverseTrajectory(self.trajs[key])
+    return new_bimanual_regrasp_traj
+
 class CCVertex(object):  
   """
   Vertex of closed-chain motion. It stores all information required
@@ -164,7 +179,7 @@ class CCVertex(object):
     """
     Add regrasp traj to a vertex containing regrasp action.
     """
-    self.bimanual_regrasp_traj = dict(bimanual_regrasp_traj)
+    self.bimanual_regrasp_traj = bimanual_regrasp_traj
     self.filled = True
 
 class CCVertexDatabase(object):
@@ -361,10 +376,7 @@ class CCTree(object):
     else:
       while (vertex.parent_index is not None):
         if vertex.contain_regrasp != NOREGRASP:
-          bimanual_regrasp_traj = {0: None, 1: None}
-          for key in vertex.bimanual_regrasp_traj.keys():
-            if vertex.bimanual_regrasp_traj[key] is not None:
-              bimanual_regrasp_traj[key] = orpy.planningutils.ReverseTrajectory(vertex.bimanual_regrasp_traj[key])
+          bimanual_regrasp_traj = vertex.bimanual_regrasp_traj.reverse()
           bimanual_trajs.append(bimanual_regrasp_traj)
         bimanual_trajs.append([vertex.bimanual_wpts[0][::-1],
                                vertex.bimanual_wpts[1][::-1]])
@@ -909,7 +921,7 @@ class CCPlanner(object):
             continue
           self._output_info('Planning regrasp no.[{0}] for [{1}] tree...'.format(regrasp_count, ['FW', 'BW'][tree.treetype]), 'yellow')
 
-          bimanual_regrasp_traj = {0:None, 1:None}
+          bimanual_regrasp_traj = BimanualRegraspTrajectory()
           # position everything correctly 
           self.obj.SetTransform(vertex.SE3_config_end.T)
           for robot, q_robot_inter in zip(self.robots,
@@ -935,7 +947,7 @@ class CCPlanner(object):
                 self.rave_planner.InitPlan(robot, params)
                 traj = orpy.RaveCreateTrajectory(self.env, '')
                 if self.rave_planner.PlanPath(traj) == HAS_SOLUTION:
-                  bimanual_regrasp_traj[i] = traj
+                  bimanual_regrasp_traj.trajs[i] = traj
                   robot.SetActiveDOFValues(q_robot_end)
                   self.loose_gripper(query, [i])
                 else:

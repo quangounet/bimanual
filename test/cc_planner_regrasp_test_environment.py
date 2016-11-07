@@ -16,7 +16,7 @@ if __name__ == "__main__":
   # Load OpenRAVE environment
   scene_file = '../xml/worlds/bimanual_setup.env.xml'
   env = orpy.Environment()
-  env.SetViewer('qtcoin')
+  # env.SetViewer('qtcoin')
   env.Load(scene_file)
 
   # Retrive robot and objects
@@ -118,27 +118,34 @@ if __name__ == "__main__":
 
   rep = 50
   from time import time
-  import cc_planner_regrasp as ccp 
+  import cc_planner_reform as ccp 
   ccplanner = ccp.CCPlanner(Lshape, [left_robot, right_robot], 
                             plan_regrasp=False, debug=False)
-  t = time() 
+  t1 = time() 
   i = 0
   while i < rep:
     print 'i: ', i
     ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, 
                           q_robots_goal, q_robots_grasp, T_obj_start, nn=2, 
-                          step_size=0.5, regrasp_limits=[1,1])
+                          step_size=0.5, regrasp_limits=[1, 1])
     ccplanner.set_query(ccquery)
     res = ccplanner.solve(timeout=30)
     if res:
       i += 1
-  print (time()-t)/rep
+  t1_end = time()
+
+# res
+# cc_planner_regrasp_o 4.62701102734 4.31023404121
+# cc_planner_regrasp   4.26044061979 3.94380569935
+# cc_planner_reform_2  4.34748936017 4.26719269753 4.234452338218689
+# cc_planner_reform    4.47642282645 3.52818122387 4.872096581459045
+
+
+
 
 
   ccplanner.shortcut(ccquery, maxiters=[40, 30])
-  ccplanner.visualize_cctraj(ccquery.cctraj, speed=1)
-
-
+  ccplanner.visualize_cctraj(ccquery.cctraj, speed=2)
 
 
 

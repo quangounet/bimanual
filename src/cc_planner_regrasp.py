@@ -425,7 +425,7 @@ class CCQuery(object):
                q_robots_grasp, T_obj_start, T_obj_goal=None, nn=-1, 
                step_size=0.7, velocity_scale=1, interpolation_duration=None, 
                discr_timestep=5e-3, discr_check_timestep=None,
-               regrasp_limits=[0, 0]):
+               regrasp_limit=0):
     """
     CCQuery constructor. It is independent of robots to be planned since robot
     info will be stored in planner itself.
@@ -501,7 +501,7 @@ class CCQuery(object):
     self.interpolation_duration = interpolation_duration
     self.discr_timestep         = discr_timestep
     self.discr_check_timestep   = discr_check_timestep
-    self.regrasp_limits         = regrasp_limits
+    self.regrasp_limit          = regrasp_limit
 
     if step_size < 0.1:
       raise CCPlannerException('step_size should not be less than 0.1')
@@ -1004,11 +1004,9 @@ class CCPlanner(object):
     if (query.iteration_count - 1) % 2 == FW:
       cur_dir = FW
       cur_tree = query.tree_start
-      cur_regrasp_limit = query.regrasp_limits[FW]
     else:
       cur_dir = BW
       cur_tree = query.tree_end
-      cur_regrasp_limit = query.regrasp_limits[BW]
 
     status = TRAPPED
     nnindices = self._nearest_neighbor_indices(SE3_config, cur_dir)
@@ -1120,7 +1118,7 @@ class CCPlanner(object):
                             translation_traj, bimanual_wpts, timestamps)
         return status,
       else:
-        if v_near.regrasp_count >= cur_regrasp_limit:
+        if v_near.regrasp_count >= query.regrasp_limit:
           status = TRAPPED
           continue
         self._output_debug('TRAPPED : SE(3) trajectory need regrasping', 
@@ -1144,20 +1142,22 @@ class CCPlanner(object):
       cur_extend_dir = BW
       cur_tree_extend = query.tree_end
       cur_tree_goal = query.tree_start
-      cur_regrasp_limit = query.regrasp_limits[BW]
     else:
       cur_dir = BW
       cur_extend_dir = FW
       cur_tree_extend = query.tree_start
       cur_tree_goal = query.tree_end
-      cur_regrasp_limit = query.regrasp_limits[FW]
 
     v_test = query.database[cur_tree_goal.end_index]
+    allowed_regrasp_count = query.regrasp_limit - v_test.regrasp_count
     nnindices = self._nearest_neighbor_indices(v_test.config.SE3_config,
-                                               cur_extend_dir)
+                                               cur_extend_dir,
+                                               allowed_regrasp_count)
+
     status = TRAPPED
     for index in nnindices:
       v_near = query.database[index]
+      remain_regrasp_count = allowed_regrasp_count - v_near.regrasp_count
 
       while True:
         q_beg  = v_near.config.SE3_config.q
@@ -1236,7 +1236,8 @@ class CCPlanner(object):
             status = REACHED
             return status,
           else: # need regrasp
-            if v_near.regrasp_count >= cur_regrasp_limit:
+            if v_near.regrasp_count >= query.regrasp_limit \
+              or remain_regrasp_count==0:
               status = TRAPPED
               break
             self._output_debug('TRAPPED : SE(3) trajectory need regrasping', 
@@ -1315,7 +1316,8 @@ class CCPlanner(object):
                                        timestamps)
             v_near = v_new
           else: # need regrasp
-            if v_near.regrasp_count >= cur_regrasp_limit:
+            if v_near.regrasp_count >= query.regrasp_limit \
+              or remain_regrasp_count==0:
               status = TRAPPED
               break
             self._output_debug('TRAPPED : SE(3) trajectory need regrasping', 
@@ -1435,7 +1437,8 @@ class CCPlanner(object):
             self.bimanual_T_rel, ref_sols, self._query.discr_timestep,
             self._query.discr_check_timestep)
 
-  def _nearest_neighbor_indices(self, SE3_config, treetype):
+  def _nearest_neighbor_indices(self, SE3_config, treetype,
+                                regrasp_count_limit=None):
     """
     Return indices of C{self.nn} vertices nearest to the given C{SE3_config}
     in the tree specified by C{treetype}.
@@ -1450,21 +1453,23 @@ class CCPlanner(object):
              ascending distance
     """
     database = self._query.database
-    if (treetype == FW):
-      nv = len(self._query.tree_start)
-    else:
-      nv = len(self._query.tree_end)
 
-    cur_tree_vertices = np.array([v for v in database.vertices if v.type == treetype])
+    if regrasp_count_limit is None:
+      cur_tree_vertices = np.array([v for v in database.vertices 
+                                    if v.type == treetype])
+    else:
+      cur_tree_vertices = np.array([v for v in database.vertices 
+                                    if (v.type == treetype and 
+                                    v.regrasp_count<=regrasp_count_limit)])
     distance_list = [utils.SE3_distance(SE3_config.T, v.config.SE3_config.T, 
                       1.0 / np.pi, 1.0) for v in cur_tree_vertices]
     distance_heap = heap.Heap(distance_list)
         
     if (self._query.nn == -1):
       # to consider all vertices in the tree as nearest neighbors
-      nn = nv
+      nn = len(cur_tree_vertices)
     else:
-      nn = min(self._query.nn, nv)
+      nn = min(self._query.nn, len(cur_tree_vertices))
     cur_nnindices = np.argsort(distance_list)[:nn]
     nnindices = [cur_tree_vertices[i].index for i in cur_nnindices]
     return nnindices

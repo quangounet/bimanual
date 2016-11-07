@@ -117,8 +117,8 @@ if __name__ == "__main__":
   print (time()-t)/rep
 
 
-  ccplanner.shortcut(ccquery, maxiter=40)
-  ccplanner.visualize_cctraj(ccquery.cctraj, speed=2)
+  ccplanner.shortcut(ccquery, maxiters=[40, 30])
+  ccplanner.visualize_cctraj(ccquery.cctraj, speed=1)
 
 
 
@@ -155,10 +155,10 @@ t = time()
 params = orpy.Planner.PlannerParameters()
 params.SetRobotActiveJoints(robot)
 params.SetGoalConfig(q_robot) # set goal to all ones
-params.SetExtraParameters("""<_postprocessing planner="linearsmoother">
-    <_nmaxiterations>1</_nmaxiterations>
-</_postprocessing>""")
-# params.SetExtraParameters("<_postprocessing></_postprocessing>")
+# params.SetExtraParameters("""<_postprocessing planner="linearsmoother">
+#     <_nmaxiterations>1</_nmaxiterations>
+# </_postprocessing>""")
+params.SetExtraParameters("<_postprocessing></_postprocessing>")
 planner=orpy.RaveCreatePlanner(env,'birrt')
 planner.InitPlan(robot, params)
 traj = orpy.RaveCreateTrajectory(env,'')

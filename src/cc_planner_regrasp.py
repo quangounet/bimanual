@@ -690,6 +690,7 @@ class CCPlanner(object):
     
     self.bimanual_obj_tracker = BimanualObjectTracker(self.robots, manip_obj, debug=self._debug)
     self.rave_planner = orpy.RaveCreatePlanner(self.env, 'birrt')
+    self.rave_smoother = orpy.RaveCreatePlanner(self.env, 'parabolicsmoother')
 
   def sample_SE3_config(self):
     """
@@ -946,10 +947,9 @@ class CCPlanner(object):
                 params.SetGoalConfig(q_robot) # set goal to all ones
                 params.SetExtraParameters(
                   """
-                  <_nmaxiterations>200</_nmaxiterations>
-                  <_postprocessing planner="linearsmoother">
-                  <_nmaxiterations>1</_nmaxiterations></_postprocessing>
-                  """)
+                  <_nmaxiterations>500</_nmaxiterations>
+                  <_postprocessing></_postprocessing>
+                """)
                 self.rave_planner.InitPlan(robot, params)
                 traj = orpy.RaveCreateTrajectory(self.env, '')
                 if self.rave_planner.PlanPath(traj) == HAS_SOLUTION:
@@ -1500,7 +1500,7 @@ class CCPlanner(object):
     sampling_step = 0.01
     refresh_step  = sampling_step / speed
 
-    for index in bimanual_traj:
+    for index in xrange(2):
       traj = bimanual_traj[index]
       if traj is not None:
         robot = self.robots[index]
@@ -1554,7 +1554,7 @@ class CCPlanner(object):
         timestamp_index -= 1
         self.visualize_regrasp_traj(bimanual_traj, speed=speed)
 
-  def shortcut(self, query, maxiter=20):
+  def shortcut(self, query, maxiters=[20, 20]):
     """
     Shortcut the closed-chain trajectory in the given query (C{query.cctraj}). This
     method replaces the original trajectory with the new one.
@@ -1589,7 +1589,7 @@ class CCPlanner(object):
 
     self.loose_gripper(query)
     t_begin = time()
-    for _ in xrange(maxiter):  
+    for _ in xrange(maxiters[0]):  
       self._output_debug('Iteration {0}'.format(i + 1), color='blue', bold=False)
       total_length = len(timestamps)
       wpt_traj_timestamps = {}
@@ -1705,12 +1705,46 @@ class CCPlanner(object):
       successful_count += 1
 
     t_end = time()
-    self.reset_config(query)
-    self._output_info('Shortcutting done. Total running time : {0} s.'. format(t_end - t_begin), 'green')
+    self._output_info('Shortcutting for closed-chain motion done. Running time : {0} s.'. format(t_end - t_begin), 'green')
     self._output_debug('Successful: {0} times. In collision: {1} times. Not shorter: {2} times. Not reachable: {3} times. Not continuous: {4} times.'.format(successful_count, in_collision_count, not_shorter_count, not_reachable_count, not_continuous_count), 'yellow')
 
     query.cctraj = CCTrajectory(lie_traj, translation_traj, bimanual_trajs, 
                                 timestamps)
+
+    # smoothing regrasp trajs
+    t_begin = time()
+    self.loose_gripper(query)
+    for i, bimanual_traj in enumerate(bimanual_trajs):
+      if type(bimanual_traj) is dict:
+        bimanual_wpts_0 = bimanual_trajs[i-1]
+        bimanual_wpts_1 = bimanual_trajs[i+1]
+        t = wpt_traj_timestamps[i-1][-1]
+        # position everything
+        T = np.eye(4)
+        T[:3, :3] = lie_traj.EvalRotation(t)
+        T[:3, 3] = translation_traj.Eval(t)
+        self.obj.SetTransform(T)
+        self.robots[0].SetActiveDOFValues(bimanual_wpts_0[0][-1])
+        self.robots[1].SetActiveDOFValues(bimanual_wpts_0[1][-1])        
+        for index in xrange(2):
+          traj = bimanual_traj[index]
+          robot = self.robots[index]
+          if traj is not None:
+            robot.SetDOFValues([0], [6])
+            params = orpy.Planner.PlannerParameters()
+            params.SetRobotActiveJoints(robot)
+            params.SetExtraParameters(
+              "<_nmaxiterations>{0}</_nmaxiterations>"
+              "<_postprocessing></_postprocessing>".format(maxiters[1])
+            )
+            self.rave_smoother.InitPlan(robot, params)
+            self.rave_smoother.PlanPath(traj)
+            self.loose_gripper(query, [index])
+            robot.SetActiveDOFValues(bimanual_wpts_1[index][0])
+    t_end = time()
+    self.reset_config(query)
+    self._output_info('Shortcutting for regrasp motion done. Running time : {0} s.'. format(t_end - t_begin), 'green')
+
     
   def _enable_robots_collision(self, enable=True):
     """

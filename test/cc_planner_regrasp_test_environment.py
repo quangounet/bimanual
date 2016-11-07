@@ -96,9 +96,27 @@ if __name__ == "__main__":
   ccplanner.set_query(ccquery)
   res = ccplanner.solve(timeout=100)
 
+  import cc_planner_reform as ccp 
+  ccplanner = ccp.CCPlanner(Lshape, [left_robot, right_robot], 
+                            plan_regrasp=True, debug=False)
+  ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, 
+                        q_robots_goal, q_robots_grasp, T_obj_start, nn=2, 
+                        step_size=0.5, regrasp_limits=[10,10])
+  ccplanner.set_query(ccquery)
+  res = ccplanner.solve(timeout=100)
+
+  import cc_planner_reform_2 as ccp 
+  ccplanner = ccp.CCPlanner(Lshape, [left_robot, right_robot], 
+                            plan_regrasp=True, debug=False)
+  ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, 
+                        q_robots_goal, q_robots_grasp, T_obj_start, nn=2, 
+                        step_size=0.5, regrasp_limit=2)
+  ccplanner.set_query(ccquery)
+  res = ccplanner.solve(timeout=100)
 
 
-  rep = 100
+
+  rep = 50
   from time import time
   import cc_planner_regrasp as ccp 
   ccplanner = ccp.CCPlanner(Lshape, [left_robot, right_robot], 
@@ -109,7 +127,7 @@ if __name__ == "__main__":
     print 'i: ', i
     ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, 
                           q_robots_goal, q_robots_grasp, T_obj_start, nn=2, 
-                          step_size=0.5, regrasp_limit=2)
+                          step_size=0.5, regrasp_limits=[1,1])
     ccplanner.set_query(ccquery)
     res = ccplanner.solve(timeout=30)
     if res:

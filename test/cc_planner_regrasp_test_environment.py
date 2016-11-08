@@ -16,7 +16,7 @@ if __name__ == "__main__":
   # Load OpenRAVE environment
   scene_file = '../xml/worlds/bimanual_setup.env.xml'
   env = orpy.Environment()
-  # env.SetViewer('qtcoin')
+  env.SetViewer('qtcoin')
   env.Load(scene_file)
 
   # Retrive robot and objects
@@ -101,7 +101,7 @@ if __name__ == "__main__":
                             plan_regrasp=True, debug=False)
   ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, 
                         q_robots_goal, q_robots_grasp, T_obj_start, nn=2, 
-                        step_size=0.5, regrasp_limits=[10,10])
+                        step_size=0.5, regrasp_limit=2)
   ccplanner.set_query(ccquery)
   res = ccplanner.solve(timeout=100)
 
@@ -114,31 +114,48 @@ if __name__ == "__main__":
   ccplanner.set_query(ccquery)
   res = ccplanner.solve(timeout=100)
 
-
-
   rep = 50
   from time import time
-  import cc_planner_reform as ccp 
+  import cc_planner_reform_2 as ccp 
   ccplanner = ccp.CCPlanner(Lshape, [left_robot, right_robot], 
                             plan_regrasp=False, debug=False)
-  t1 = time() 
+  t2 = time() 
   i = 0
   while i < rep:
     print 'i: ', i
     ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, 
                           q_robots_goal, q_robots_grasp, T_obj_start, nn=2, 
-                          step_size=0.5, regrasp_limits=[1, 1])
+                          step_size=0.5, regrasp_limit=2)
     ccplanner.set_query(ccquery)
     res = ccplanner.solve(timeout=30)
     if res:
       i += 1
-  t1_end = time()
+  t2_end = time()
+
+  import cc_planner_reform as ccp 
+  ccplanner = ccp.CCPlanner(Lshape, [left_robot, right_robot], 
+                            plan_regrasp=False, debug=False)
+  t3 = time() 
+  i = 0
+  while i < rep:
+    print 'i: ', i
+    ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, 
+                          q_robots_goal, q_robots_grasp, T_obj_start, nn=2, 
+                          step_size=0.5, regrasp_limit=2)
+    ccplanner.set_query(ccquery)
+    res = ccplanner.solve(timeout=30)
+    if res:
+      i += 1
+  t3_end = time()
+
+  print (t2_end-t2)/rep
+  print (t3_end-t3)/rep
 
 # res
-# cc_planner_regrasp_o 4.62701102734 4.31023404121
-# cc_planner_regrasp   4.26044061979 3.94380569935
-# cc_planner_reform_2  4.34748936017 4.26719269753 4.234452338218689
-# cc_planner_reform    4.47642282645 3.52818122387 4.872096581459045
+# cc_planner_regrasp_o 4.627 4.310
+# cc_planner_regrasp   4.260 3.943       5.806
+# cc_planner_reform_2  4.347 4.267 4.234 5.698 4.668 4.945 6.160 6.277 |5.791
+# cc_planner_reform    4.476 3.528 4.872 6.483 7.009 5.130 6.290 5.722 |5.709
 
 
 

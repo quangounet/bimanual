@@ -105,15 +105,6 @@ if __name__ == "__main__":
   ccplanner.set_query(ccquery)
   res = ccplanner.solve(timeout=100)
 
-  import cc_planner_reform_2 as ccp 
-  ccplanner = ccp.CCPlanner(Lshape, [left_robot, right_robot], 
-                            plan_regrasp=True, debug=False)
-  ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, 
-                        q_robots_goal, q_robots_grasp, T_obj_start, nn=2, 
-                        step_size=0.5, regrasp_limit=2)
-  ccplanner.set_query(ccquery)
-  res = ccplanner.solve(timeout=100)
-
   rep = 50
   from time import time
   import cc_planner_reform_2 as ccp 
@@ -151,17 +142,8 @@ if __name__ == "__main__":
   print (t2_end-t2)/rep
   print (t3_end-t3)/rep
 
-# res
-# cc_planner_regrasp_o 4.627 4.310
-# cc_planner_regrasp   4.260 3.943       5.806
-# cc_planner_reform_2  4.347 4.267 4.234 5.698 4.668 4.945 6.160 6.277 |5.791
-# cc_planner_reform    4.476 3.528 4.872 6.483 7.009 5.130 6.290 5.722 |5.709
 
-
-
-
-
-  ccplanner.shortcut(ccquery, maxiters=[40, 30])
+  ccplanner.shortcut(ccquery, maxiters=[40, 50])
   ccplanner.visualize_cctraj(ccquery.cctraj, speed=2)
 
 

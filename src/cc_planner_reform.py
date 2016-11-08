@@ -633,13 +633,12 @@ class CCQuery(object):
     
     bimanual_trajs = self.tree_start.generate_bimanual_trajs()
     if self.connecting_dir == BW:
-      bimanual_trajs.append(self.connecting_bimanual_wpts)      
+      bimanual_trajs.append(self.connecting_bimanual_wpts)
       if self.connecting_contain_endregrasp:
-        bimanual_trajs.append(self.connecting_bimanual_regrasp_traj)  
+        bimanual_trajs.append(self.connecting_bimanual_regrasp_traj)
     else:
       if self.connecting_contain_endregrasp:
-        connecting_bimanual_regrasp_traj = self.connecting_bimanual_regrasp_traj.reverse()
-        bimanual_trajs.append(connecting_bimanual_regrasp_traj)  
+        bimanual_trajs.append(self.connecting_bimanual_regrasp_traj.reverse())
       bimanual_trajs.append([self.connecting_bimanual_wpts[0][::-1],
                              self.connecting_bimanual_wpts[1][::-1]])
     bimanual_trajs += self.tree_end.generate_bimanual_trajs()
@@ -969,13 +968,13 @@ class CCPlanner(object):
             for i in xrange(self._nrobots):
               q_robot_inter = vertex.q_robots_inter[i]
               q_robot_end   = vertex.q_robots_end[i]
-              if not np.isclose(q_robot_end, q_robot_inter, rtol=1e-3).all():
+              if not np.isclose(q_robot_inter, q_robot_end, rtol=1e-3).all():
                 robot = self.robots[i]
                 robot.SetDOFValues([0], [self._ndof])
                 if self._plan_regrasp:
                   params = orpy.Planner.PlannerParameters()
                   params.SetRobotActiveJoints(robot)
-                  params.SetGoalConfig(q_robot_end) # set goal to all ones
+                  params.SetGoalConfig(q_robot_end)
                   params.SetExtraParameters(
                     """
                     <_nmaxiterations>500</_nmaxiterations>
@@ -1011,7 +1010,7 @@ class CCPlanner(object):
                 if self._plan_regrasp:
                   params = orpy.Planner.PlannerParameters()
                   params.SetRobotActiveJoints(robot)
-                  params.SetGoalConfig(q_robot_inter) # set goal to all ones
+                  params.SetGoalConfig(q_robot_inter)
                   params.SetExtraParameters(
                     """
                     <_nmaxiterations>500</_nmaxiterations>
@@ -1037,7 +1036,8 @@ class CCPlanner(object):
     # connecting link
     if query.connecting_contain_endregrasp:
       regrasp_count += 1
-      self._output_info('Planning regrasp no.[{0}] for [connecting]'.format(regrasp_count), 'yellow')
+      self._output_info('Planning regrasp no.[{0}] for [connecting]'\
+                        .format(regrasp_count), 'yellow')
       bimanual_regrasp_traj = BimanualRegraspTrajectory()
       if query.connecting_dir == FW:
         v_goal = query.database[query.tree_start.end_index]
@@ -1053,17 +1053,18 @@ class CCPlanner(object):
         q_robot_inter = query.connecting_q_robots_inter[i]
         q_robot_end = v_goal.q_robots_end[i]
         if not np.isclose(q_robot_inter, q_robot_end, rtol=1e-3).all():
-          robot     = self.robots[i]
+          robot = self.robots[i]
           robot.SetDOFValues([0], [self._ndof])
           if self._plan_regrasp:
             params = orpy.Planner.PlannerParameters()
             params.SetRobotActiveJoints(robot)
-            params.SetGoalConfig(q_robot_end) # set goal to all ones
+            params.SetGoalConfig(q_robot_end)
             params.SetExtraParameters(
               """
               <_nmaxiterations>500</_nmaxiterations>
-              <_postprocessing></_postprocessing>
-            """)
+              <_postprocessing planner="linearsmoother">
+              <_nmaxiterations>1</_nmaxiterations></_postprocessing>
+              """)
             self.rave_planner.InitPlan(robot, params)
             traj = orpy.RaveCreateTrajectory(self.env, '')
             if self.rave_planner.PlanPath(traj) == HAS_SOLUTION:
@@ -1075,7 +1076,7 @@ class CCPlanner(object):
               self.loose_gripper(query)
               return False
 
-      query.connecting_bimanual_regrasp_traj = bimanual_regrasp_traj      
+      query.connecting_bimanual_regrasp_traj = bimanual_regrasp_traj
 
     query.regrasp_planning_time += time() - t_begin
     return True

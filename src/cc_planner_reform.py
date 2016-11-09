@@ -197,7 +197,7 @@ class CCVertexDatabase(object):
     vertex.index = len(self.vertices)
     self.vertices.append(vertex)  
 
-  def update_subtree_stats(self, index):
+  def _update_subtree_stats(self, index):
     v_parent = self.vertices[index]
     for child_index in v_parent.child_indices:
       v_child = self.vertices[child_index]
@@ -207,7 +207,7 @@ class CCVertexDatabase(object):
         v_child.regrasp_count = v_parent.regrasp_count + 1
       else:
         v_child.regrasp_count = v_parent.regrasp_count
-      self.update_subtree_stats(child_index)
+      self._update_subtree_stats(child_index)
 
   @staticmethod
   def set_relation(v_child, v_parent):
@@ -217,20 +217,16 @@ class CCVertexDatabase(object):
     if v_child.index not in v_parent.child_indices:
       v_parent.child_indices.append(v_child.index)
 
-  def visualize(self):
-    self.draw(0, 0)
-    self.draw(1, 0)
-
-  def draw(self, index, tab):
-    v = self.vertices[index]
-    print '\r','\t'*tab, v.index,
-    for child_index in v.child_indices:
-      self.draw(child_index, tab+1)
-      print
+  @staticmethod
+  def remove_relation(v_child, v_parent):
+    if v_child.parent_index == v_parent.index:
+      v_child.parent_index = None
+    if v_child.index in v_parent.child_indices:
+      v_parent.child_indices.remove(v_child.index)
 
   def output(self):
     for v in self.vertices:
-      print v.index, ' \t', ['FW','BW'][v.type],'\t',v.parent_index, '\t',['NOREG', 'START','ENDRE'][v.contain_regrasp],'\t', v.regrasp_count,'\t', v.child_indices
+      print '{0}.{1}'.format(v.index,v.regrasp_count),'\t', v.parent_index, '\t', v.child_indices,'\t', ['FW','BW'][v.type],'\t',['NO', 'START','END'][v.contain_regrasp]
 
 
 class CCTree(object):  
@@ -1096,6 +1092,9 @@ class CCPlanner(object):
     embed()
 
     # convert bad vertices and transfer to good tree
+    v0 = query.database[bad_indices[0]]
+    query.database.remove_relation(v_child=v0,
+                                   v_parent=query.database[v0.parent_index])
     for i, index in enumerate(bad_indices[:-1]):
       v = query.database[index]
       v_new_parent = query.database[bad_indices[i+1]]
@@ -1168,7 +1167,7 @@ class CCPlanner(object):
                          query.connecting_bimanual_wpts[1][::-1]]
     v.timestamps = query.connecting_timestamps
 
-    query.database.update_subtree_stats(good_tree.end_index)
+    query.database._update_subtree_stats(good_tree.end_index)
 
   def reset_config(self, query):
     """

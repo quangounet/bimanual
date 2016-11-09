@@ -101,9 +101,9 @@ if __name__ == "__main__":
                             plan_regrasp=True, debug=False)
   ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, 
                         q_robots_goal, q_robots_grasp, T_obj_start, nn=2, 
-                        step_size=0.2, regrasp_limit=100)
+                        step_size=0.4, regrasp_limit=100)
   ccplanner.set_query(ccquery)
-  res = ccplanner.solve(timeout=100)
+  res = ccplanner.solve(timeout=15)
 
   rep = 50
   from time import time

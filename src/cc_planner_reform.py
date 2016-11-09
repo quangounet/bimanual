@@ -205,6 +205,8 @@ class CCVertexDatabase(object):
       v_child.level = v_parent.level + 1
       if v_child.contain_regrasp != NOREGRASP:
         v_child.regrasp_count = v_parent.regrasp_count + 1
+      else:
+        v_child.regrasp_count = v_parent.regrasp_count
       self.update_subtree_stats(child_index)
 
   @staticmethod
@@ -225,6 +227,11 @@ class CCVertexDatabase(object):
     for child_index in v.child_indices:
       self.draw(child_index, tab+1)
       print
+
+  def output(self):
+    for v in self.vertices:
+      print v.index, ' \t', ['FW','BW'][v.type],'\t',v.parent_index, '\t',['NOREG', 'START','ENDRE'][v.contain_regrasp],'\t', v.regrasp_count,'\t', v.child_indices
+
 
 class CCTree(object):  
   """
@@ -983,7 +990,9 @@ class CCPlanner(object):
                     """)
                   self.rave_planner.InitPlan(robot, params)
                   traj = orpy.RaveCreateTrajectory(self.env, '')
-                  if self.rave_planner.PlanPath(traj) == HAS_SOLUTION:
+
+                  if self.rave_planner.PlanPath(traj) == HAS_SOLUTION and \
+                    np.random.rand()>0.8:
                     bimanual_regrasp_traj.trajs[i] = traj
                     robot.SetActiveDOFValues(q_robot_end)
                     self.loose_gripper(query, [i])
@@ -1019,7 +1028,8 @@ class CCPlanner(object):
                     """)
                   self.rave_planner.InitPlan(robot, params)
                   traj = orpy.RaveCreateTrajectory(self.env, '')
-                  if self.rave_planner.PlanPath(traj) == HAS_SOLUTION:
+                  if self.rave_planner.PlanPath(traj) == HAS_SOLUTION and \
+                    np.random.rand()>0.8:
                     bimanual_regrasp_traj.trajs[i] = traj
                     robot.SetActiveDOFValues(q_robot_inter)
                     self.loose_gripper(query, [i])
@@ -1083,6 +1093,7 @@ class CCPlanner(object):
 
   def _reform_trees(self, bad_tree_type, bad_indices):
     query = self._query
+    embed()
 
     # convert bad vertices and transfer to good tree
     for i, index in enumerate(bad_indices[:-1]):
@@ -1115,7 +1126,6 @@ class CCPlanner(object):
       v.bimanual_wpts = [v_new_parent.bimanual_wpts[0][::-1],
                          v_new_parent.bimanual_wpts[1][::-1]]
       v.timestamps = v_new_parent.timestamps
-      v.bimanual_regrasp_traj = None
 
     if bad_tree_type == FW:
       good_tree = query.tree_end
@@ -1157,7 +1167,6 @@ class CCPlanner(object):
       v.bimanual_wpts = [query.connecting_bimanual_wpts[0][::-1],
                          query.connecting_bimanual_wpts[1][::-1]]
     v.timestamps = query.connecting_timestamps
-    v.bimanual_regrasp_traj = None
 
     query.database.update_subtree_stats(good_tree.end_index)
 

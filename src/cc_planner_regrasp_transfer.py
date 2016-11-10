@@ -451,7 +451,7 @@ class CCQuery(object):
                q_robots_grasp, T_obj_start, T_obj_goal=None, nn=-1, 
                step_size=0.7, velocity_scale=1, interpolation_duration=None, 
                discr_timestep=5e-3, discr_check_timestep=None,
-               regrasp_limit=0):
+               regrasp_limit=1):
     """
     CCQuery constructor. It is independent of robots to be planned since robot
     info will be stored in planner itself.
@@ -1325,7 +1325,6 @@ class CCPlanner(object):
                             translation_traj, bimanual_wpts, timestamps)
         return status,
       else:
-        # if v_near.regrasp_count >= query.regrasp_limit:
         if v_near.regrasp_count >= query.regrasp_limit \
           or self._is_bad_regrasp_T(robot_indices=[res[1]], 
                                     T_obj_regrasp=res[4]):
@@ -1433,7 +1432,8 @@ class CCPlanner(object):
                                       bold=False)
                   need_regrasp = True
               if need_regrasp:
-                if self._is_bad_regrasp_T([0,1], v_test.SE3_config_end.T):
+                if self._is_bad_regrasp_T([0,1], v_test.SE3_config_end.T)\
+                  or remain_regrasp_count == 0:
                   break
 
                 self._output_debug('Adding regrasping to v_test', 'yellow')
@@ -1463,7 +1463,8 @@ class CCPlanner(object):
                                       bold=False)
                   need_regrasp = True
               if need_regrasp:
-                if self._is_bad_regrasp_T([0,1], v_test.SE3_config_end.T):
+                if self._is_bad_regrasp_T([0,1], v_test.SE3_config_end.T)\
+                  or remain_regrasp_count == 0:
                   break
                 self._output_debug('Adding regrasping to connect', 'yellow')
                 query.connecting_contain_endregrasp = True
@@ -1484,7 +1485,6 @@ class CCPlanner(object):
               or remain_regrasp_count == 0 \
               or self._is_bad_regrasp_T(robot_indices=[res[1]], 
                                         T_obj_regrasp=res[4]):
-              # or remain_regrasp_count == 0:
               status = TRAPPED
               break
 
@@ -1570,7 +1570,6 @@ class CCPlanner(object):
               or remain_regrasp_count == 0 \
               or self._is_bad_regrasp_T(robot_indices=[res[1]], 
                                         T_obj_regrasp=res[4]):
-              # or remain_regrasp_count == 0:
               status = TRAPPED
               break
 

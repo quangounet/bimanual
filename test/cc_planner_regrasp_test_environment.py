@@ -16,7 +16,7 @@ if __name__ == "__main__":
   # Load OpenRAVE environment
   scene_file = '../xml/worlds/bimanual_setup.env.xml'
   env = orpy.Environment()
-  # env.SetViewer('qtcoin')
+  env.SetViewer('qtcoin')
   env.Load(scene_file)
 
   # Retrive robot and objects
@@ -101,20 +101,20 @@ if __name__ == "__main__":
                             plan_regrasp=True, debug=False)
   ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, 
                         q_robots_goal, q_robots_grasp, T_obj_start, nn=2, 
-                        step_size=0.5, regrasp_limit=2)
+                        step_size=0.5, regrasp_limit=3)
   ccplanner.set_query(ccquery)
   res = ccplanner.solve(timeout=30)
 
 
   ccplanner.shortcut(ccquery, maxiters=[40, 50])
-  ccplanner.visualize_cctraj(ccquery.cctraj, speed=2)
+  ccplanner.visualize_cctraj(ccquery.cctraj, speed=5)
 
 
   rep = 50
   from time import time
   import cc_planner_regrasp as ccp 
   ccplanner = ccp.CCPlanner(Lshape, [left_robot, right_robot], 
-                            plan_regrasp=False, debug=False)
+                            plan_regrasp=True, debug=False)
   t2 = time() 
   i = 0
   while i < rep:
@@ -123,29 +123,29 @@ if __name__ == "__main__":
                           q_robots_goal, q_robots_grasp, T_obj_start, nn=2, 
                           step_size=0.5, regrasp_limit=2)
     ccplanner.set_query(ccquery)
-    res = ccplanner.solve(timeout=30)
+    res = ccplanner.solve(timeout=50)
     if res:
       i += 1
   t2_end = time()
 
   import cc_planner_regrasp_transfer as ccp 
   ccplanner = ccp.CCPlanner(Lshape, [left_robot, right_robot], 
-                            plan_regrasp=False, debug=False)
+                            plan_regrasp=True, debug=False)
   t3 = time() 
   i = 0
   while i < rep:
     print 'i: ', i
     ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, 
                           q_robots_goal, q_robots_grasp, T_obj_start, nn=2, 
-                          step_size=0.5, regrasp_limit=2)
+                          step_size=0.5, regrasp_limit=3)
     ccplanner.set_query(ccquery)
-    res = ccplanner.solve(timeout=30)
+    res = ccplanner.solve(timeout=50)
     if res:
       i += 1
   t3_end = time()
 
   print (t2_end-t2)/rep
-  print (t3_end-t3)/rep
+  print (t3_end-t3)/rep  # 10.84s
 
 
 

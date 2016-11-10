@@ -947,7 +947,7 @@ class CCPlanner(object):
                 params.SetGoalConfig(q_robot) # set goal to all ones
                 params.SetExtraParameters(
                   """
-                  <_nmaxiterations>500</_nmaxiterations>
+                  <_nmaxiterations>300</_nmaxiterations>
                   <_postprocessing></_postprocessing>
                 """)
                 self.rave_planner.InitPlan(robot, params)

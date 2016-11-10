@@ -1,6 +1,6 @@
 """
 Closed-chain motion planner with multiple regrasping for bimaual setup.
-This version is based on RRT-connect structure.
+This version is based on a transferable RRT-connect structure.
 NB: For regrasp planner, a CCQuery object can only be sent to it for planning 
 once. If the planning does not yield a successful outcome, a new CCQuery is
 required for planning again.
@@ -226,7 +226,7 @@ class CCVertexDatabase(object):
 
   def output(self):
     for v in self.vertices:
-      print '{0}.{1}'.format(v.index,v.regrasp_count),'\t', v.parent_index, '\t', v.child_indices,'\t', ['FW','BW'][v.type],'\t',['NO', 'START','END'][v.contain_regrasp]
+      print '{0}.{1}'.format(v.index,v.regrasp_count),'\t', v.parent_index, '\t', v.child_indices,'\t',['NO', 'START','END'][v.contain_regrasp], '\t', ['FW','BW'][v.type]
 
 
 class CCTree(object):  
@@ -565,6 +565,7 @@ class CCQuery(object):
     self.regrasp_planning_time = 0.0
     self.iteration_count       = 0
     self.solved                = False
+    self.regrasp_T_blacklist   = [[],[]]
     
     # Parameters    
     self.upper_limits = obj_translation_limits[0]
@@ -980,21 +981,22 @@ class CCPlanner(object):
                   params.SetGoalConfig(q_robot_end)
                   params.SetExtraParameters(
                     """
-                    <_nmaxiterations>500</_nmaxiterations>
-                    <_postprocessing planner="linearsmoother">
-                    <_nmaxiterations>1</_nmaxiterations></_postprocessing>
-                    """)
+                    <_nmaxiterations>300</_nmaxiterations>
+                    <_postprocessing></_postprocessing>
+                  """)
                   self.rave_planner.InitPlan(robot, params)
                   traj = orpy.RaveCreateTrajectory(self.env, '')
 
-                  if self.rave_planner.PlanPath(traj) == HAS_SOLUTION and \
-                    np.random.rand()>0.8:
+                  if self.rave_planner.PlanPath(traj) == HAS_SOLUTION:
+                    # print colorize('{0}'.format(self._is_bad_regrasp_T([i], vertex.SE3_config_end.T)),'green')
                     bimanual_regrasp_traj.trajs[i] = traj
                     robot.SetActiveDOFValues(q_robot_end)
                     self.loose_gripper(query, [i])
                   else:
                     self._output_info('Planning failed, reforming trees...', 
                                       'red')
+                    # print colorize('{0}'.format(self._is_bad_regrasp_T([i], vertex.SE3_config_end.T)),'red')
+                    query.regrasp_T_blacklist[i].append(vertex.SE3_config_end.T)
                     self._output_info('index: {0}'.format(index), 'red')
                     self.loose_gripper(query)
                     self._reform_trees(tree_type, spine_indices[index_i:])
@@ -1018,20 +1020,21 @@ class CCPlanner(object):
                   params.SetGoalConfig(q_robot_inter)
                   params.SetExtraParameters(
                     """
-                    <_nmaxiterations>500</_nmaxiterations>
-                    <_postprocessing planner="linearsmoother">
-                    <_nmaxiterations>1</_nmaxiterations></_postprocessing>
-                    """)
+                    <_nmaxiterations>300</_nmaxiterations>
+                    <_postprocessing></_postprocessing>
+                  """)
                   self.rave_planner.InitPlan(robot, params)
                   traj = orpy.RaveCreateTrajectory(self.env, '')
-                  if self.rave_planner.PlanPath(traj) == HAS_SOLUTION and \
-                    np.random.rand()>0.8:
+                  if self.rave_planner.PlanPath(traj) == HAS_SOLUTION:
+                    # print colorize('{0}'.format(self._is_bad_regrasp_T([i], vertex.SE3_config_start.T)),'green')
                     bimanual_regrasp_traj.trajs[i] = traj
                     robot.SetActiveDOFValues(q_robot_inter)
                     self.loose_gripper(query, [i])
                   else:
                     self._output_info('Planning failed, reforming trees...', 
                                       'red')
+                    # print colorize('{0}'.format(self._is_bad_regrasp_T([i], vertex.SE3_config_start.T)),'red')
+                    query.regrasp_T_blacklist[i].append(vertex.SE3_config_start.T)
                     self._output_info('index: {0}'.format(index), 'red')
                     self.loose_gripper(query)
                     self._reform_trees(tree_type, spine_indices[index_i:])
@@ -1067,10 +1070,9 @@ class CCPlanner(object):
             params.SetGoalConfig(q_robot_end)
             params.SetExtraParameters(
               """
-              <_nmaxiterations>500</_nmaxiterations>
-              <_postprocessing planner="linearsmoother">
-              <_nmaxiterations>1</_nmaxiterations></_postprocessing>
-              """)
+              <_nmaxiterations>300</_nmaxiterations>
+              <_postprocessing></_postprocessing>
+            """)
             self.rave_planner.InitPlan(robot, params)
             traj = orpy.RaveCreateTrajectory(self.env, '')
             if self.rave_planner.PlanPath(traj) == HAS_SOLUTION:
@@ -1089,8 +1091,6 @@ class CCPlanner(object):
 
   def _reform_trees(self, bad_tree_type, bad_indices):
     query = self._query
-    embed()
-
     # convert bad vertices and transfer to good tree
     v0 = query.database[bad_indices[0]]
     query.database.remove_relation(v_child=v0,
@@ -1325,9 +1325,13 @@ class CCPlanner(object):
                             translation_traj, bimanual_wpts, timestamps)
         return status,
       else:
-        if v_near.regrasp_count >= query.regrasp_limit:
+        # if v_near.regrasp_count >= query.regrasp_limit:
+        if v_near.regrasp_count >= query.regrasp_limit \
+          or self._is_bad_regrasp_T(robot_indices=[res[1]], 
+                                    T_obj_regrasp=res[4]):
           status = TRAPPED
           continue
+
         self._output_debug('TRAPPED : SE(3) trajectory need regrasping', 
                            bold=False)
         status = NEEDREGRASP
@@ -1429,6 +1433,9 @@ class CCPlanner(object):
                                       bold=False)
                   need_regrasp = True
               if need_regrasp:
+                if self._is_bad_regrasp_T([0,1], v_test.SE3_config_end.T):
+                  break
+
                 self._output_debug('Adding regrasping to v_test', 'yellow')
                 q_robots_end = np.array([bimanual_wpts[0][-1],
                                          bimanual_wpts[1][-1]])
@@ -1443,6 +1450,8 @@ class CCPlanner(object):
                                       bold=False)
                   need_regrasp = True
               if need_regrasp:
+                if self._is_bad_regrasp_T([0,1], v_test.SE3_config_end.T):
+                  break
                 self._output_debug('Replacing regrasping in v_test', 'yellow')
                 v_test.q_robots_end = np.array([bimanual_wpts[0][-1],
                                                 bimanual_wpts[1][-1]])
@@ -1454,6 +1463,8 @@ class CCPlanner(object):
                                       bold=False)
                   need_regrasp = True
               if need_regrasp:
+                if self._is_bad_regrasp_T([0,1], v_test.SE3_config_end.T):
+                  break
                 self._output_debug('Adding regrasping to connect', 'yellow')
                 query.connecting_contain_endregrasp = True
                 query.connecting_q_robots_inter = np.array(
@@ -1470,9 +1481,13 @@ class CCPlanner(object):
             return status,
           else: # need regrasp
             if v_near.regrasp_count >= query.regrasp_limit \
-              or remain_regrasp_count == 0:
+              or remain_regrasp_count == 0 \
+              or self._is_bad_regrasp_T(robot_indices=[res[1]], 
+                                        T_obj_regrasp=res[4]):
+              # or remain_regrasp_count == 0:
               status = TRAPPED
               break
+
             self._output_debug('TRAPPED : SE(3) trajectory need regrasping', 
                                bold=False)
             status = NEEDREGRASP
@@ -1552,14 +1567,28 @@ class CCPlanner(object):
             v_near = v_new
           else: # need regrasp
             if v_near.regrasp_count >= query.regrasp_limit \
-              or remain_regrasp_count == 0:
+              or remain_regrasp_count == 0 \
+              or self._is_bad_regrasp_T(robot_indices=[res[1]], 
+                                        T_obj_regrasp=res[4]):
+              # or remain_regrasp_count == 0:
               status = TRAPPED
               break
+
             self._output_debug('TRAPPED : SE(3) trajectory need regrasping', 
                                bold=False)
             status = NEEDREGRASP
             return status, res[1:], v_near.index
     return status,        
+
+  def _is_bad_regrasp_T(self, robot_indices, T_obj_regrasp):
+    for robot_index in robot_indices:
+      for T in self._query.regrasp_T_blacklist[robot_index]:
+        if utils.SE3_distance(T, T_obj_regrasp, 
+                              1.0 / np.pi, 1.0) < self._query.step_size/2.0:
+          self._output_info('Attempt to add regrasp but at bad T.',
+                             bold=False)
+          return True
+    return False
 
   def is_collision_free_SE3_config(self, SE3_config):
     """
@@ -1698,7 +1727,11 @@ class CCPlanner(object):
                                     v.regrasp_count <= regrasp_count_limit)])
     distance_list = [utils.SE3_distance(SE3_config.T, v.SE3_config_end.T, 
                       1.0 / np.pi, 1.0) for v in cur_tree_vertices]
-    distance_heap = heap.Heap(distance_list)
+    try:
+      distance_heap = heap.Heap(distance_list)
+    except:
+      print 'hahaha finally'
+      embed()
         
     if (self._query.nn == -1):
       # to consider all vertices in the tree as nearest neighbors

@@ -16,7 +16,7 @@ if __name__ == "__main__":
   # Load OpenRAVE environment
   scene_file = '../xml/worlds/bimanual_setup.env.xml'
   env = orpy.Environment()
-  env.SetViewer('qtcoin')
+  # env.SetViewer('qtcoin')
   env.Load(scene_file)
 
   # Retrive robot and objects
@@ -96,14 +96,19 @@ if __name__ == "__main__":
   ccplanner.set_query(ccquery)
   res = ccplanner.solve(timeout=100)
 
-  import cc_planner_reform as ccp 
+  import cc_planner_regrasp_transfer as ccp 
   ccplanner = ccp.CCPlanner(Lshape, [left_robot, right_robot], 
                             plan_regrasp=True, debug=False)
   ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, 
                         q_robots_goal, q_robots_grasp, T_obj_start, nn=2, 
-                        step_size=0.4, regrasp_limit=100)
+                        step_size=0.5, regrasp_limit=2)
   ccplanner.set_query(ccquery)
-  res = ccplanner.solve(timeout=15)
+  res = ccplanner.solve(timeout=30)
+
+
+  ccplanner.shortcut(ccquery, maxiters=[40, 50])
+  ccplanner.visualize_cctraj(ccquery.cctraj, speed=2)
+
 
   rep = 50
   from time import time
@@ -123,7 +128,7 @@ if __name__ == "__main__":
       i += 1
   t2_end = time()
 
-  import cc_planner_reform as ccp 
+  import cc_planner_regrasp_transfer as ccp 
   ccplanner = ccp.CCPlanner(Lshape, [left_robot, right_robot], 
                             plan_regrasp=False, debug=False)
   t3 = time() 
@@ -142,9 +147,6 @@ if __name__ == "__main__":
   print (t2_end-t2)/rep
   print (t3_end-t3)/rep
 
-
-  ccplanner.shortcut(ccquery, maxiters=[40, 50])
-  ccplanner.visualize_cctraj(ccquery.cctraj, speed=5)
 
 
 

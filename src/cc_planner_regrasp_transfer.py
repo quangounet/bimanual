@@ -58,7 +58,7 @@ class SE3Config(object):
     @type  qd: numop.ndarray
     @param qd: Time derivative of q.
     @type  pd: numpy.ndarray
-    @param pd: Time derivative of p (translational velocity.
+    @param pd: Time derivative of p (translational velocity).
     """
     quat_length = np.linalg.norm(q)
     assert(quat_length > 0)
@@ -121,11 +121,26 @@ class CCTrajectory(object):
     self.timestamps       = timestamps[:]
 
 class BimanualRegraspTrajectory(object):
+  """
+  Class of regrasp trajectories of a bimanual setup.
+  """
   def __init__(self, trajs={0: None, 1: None}, order=LR):
+    """
+    BimanualRegraspTrajectory constructor.
+
+    @type trajs: dict
+    @param trajs: dict object stroing one regrasp traj for each robot.
+    @type order: int
+    @param order: Execution order of the regrasp trajs.
+    """
+
     self.trajs = dict(trajs)
     self.order = order
 
   def reverse(self):
+    """
+    Reverse the stored bimanual regrasp trajectory.
+    """
     new_bimanual_regrasp_traj = BimanualRegraspTrajectory(order=1-self.order)
     for key in self.trajs.keys():
       if self.trajs[key] is not None:
@@ -143,7 +158,6 @@ class CCVertex(object):
                SE3_config_end=None):
     """
     CCVertex constructor.
-
     """
     self.q_robots_start   = q_robots_start
     self.q_robots_inter   = q_robots_inter
@@ -168,8 +182,7 @@ class CCVertex(object):
 
   def _add_regrasp_action(self):
     """
-    Add regrasp action to a vertex.
-    If the vertex contains regrasp already, replace it.
+    Add a regrasp count to the vertex.
     """
     if self.contain_regrasp == NOREGRASP:
       self.contain_regrasp = ENDREGRASP
@@ -183,6 +196,9 @@ class CCVertex(object):
     self.filled = True
 
 class CCVertexDatabase(object):
+  """
+  A database to store all vertices to form FW and BW tree.
+  """
   def __init__(self):
     self.vertices = []
 
@@ -198,6 +214,10 @@ class CCVertexDatabase(object):
     self.vertices.append(vertex)  
 
   def _update_subtree_stats(self, index):
+    """
+    Update C{type}, C{level} and {regrasp_count} of all the child indices
+    of the given parent vertex.
+    """
     v_parent = self.vertices[index]
     for child_index in v_parent.child_indices:
       v_child = self.vertices[child_index]
@@ -225,6 +245,9 @@ class CCVertexDatabase(object):
       v_parent.child_indices.remove(v_child.index)
 
   def output(self):
+    """
+    Display information of all vertices in the database.
+    """
     for v in self.vertices:
       print '{0}.{1}'.format(v.index,v.regrasp_count),'\t', v.parent_index, '\t', v.child_indices,'\t',['NO', 'START','END'][v.contain_regrasp], '\t', ['FW','BW'][v.type]
 
@@ -238,9 +261,11 @@ class CCTree(object):
     """
     CCTree constructor.
 
-    @type    v_root: CCVertex
-    @param   v_root: Root vertex to grow the tree from.
-    @type  treetype: int
+    @type database: CCVertexDatabase
+    @param database: Database where the vertices of the tree are stored.
+    @type v_root: CCVertex
+    @param v_root: Root vertex to grow the tree from.
+    @type treetype: int
     @param treetype: The direction of the tree in the closed-chain motion.
                      It can be either forward(C{FW}) or backward(C{BW}).
     """

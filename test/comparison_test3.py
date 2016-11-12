@@ -20,13 +20,16 @@ import ikea_manipulation.utils as manip_utils
 
 from IPython import embed
 
+import os.path as path
+model_path = path.abspath(path.join(path.dirname(__file__), "../xml"))
+
 class ClosedChainMotion(object):
   def __init__(self):
     # Generic configuration
     np.set_printoptions(precision=10, suppress=True)
     
     # Load OpenRAVE environment
-    scene_file = '../xml/worlds/bimanual_ikea_assembly_2.env.xml'
+    scene_file = model_path + '/worlds/bimanual_ikea_assembly_2.env.xml'
     env = orpy.Environment()
     env.SetViewer('qtcoin')
     env.Load(scene_file)
@@ -34,11 +37,11 @@ class ClosedChainMotion(object):
     # Retrive robot and objects
     left_robot = env.GetRobot('denso_left')
     right_robot = env.GetRobot('denso_right')
-    upper_frame = env.ReadKinBodyXMLFile('../xml/objects/right_frame.kinbody.xml')
-    lower_frame = env.ReadKinBodyXMLFile('../xml/objects/left_frame.kinbody.xml')
-    long_stick = env.ReadKinBodyXMLFile('../xml/objects/ikea_long_stick.kinbody.xml')
-    stick = env.ReadKinBodyXMLFile('../xml/objects/ikea_stick.kinbody.xml')
-    back = env.ReadKinBodyXMLFile('../xml/objects/ikea_back.kinbody.xml')
+    upper_frame = env.ReadKinBodyXMLFile(model_path + '/objects/right_frame.kinbody.xml')
+    lower_frame = env.ReadKinBodyXMLFile(model_path + '/objects/left_frame.kinbody.xml')
+    long_stick = env.ReadKinBodyXMLFile(model_path + 'objects/ikea_long_stick.kinbody.xml')
+    stick = env.ReadKinBodyXMLFile(model_path + '/objects/ikea_stick.kinbody.xml')
+    back = env.ReadKinBodyXMLFile(model_path + '/objects/ikea_back.kinbody.xml')
     # Correct robots transformation
     T_left_robot = np.array([[ 1.   ,  0.   ,  0.   ,  0    ],
                              [ 0.   ,  1.   ,  0.   , -0.536],

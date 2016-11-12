@@ -3,16 +3,18 @@ import pickle
 import numpy as np
 import openravepy as orpy
 import ikea_openrave.utils as rave_utils
+from bimanual.utils import utils
 from IPython import embed
 
-from bimanual.utils import utils
+import os.path as path
+model_path = path.abspath(path.join(path.dirname(__file__), "../xml"))
 
 if __name__ == "__main__":
   # Generic configuration
   np.set_printoptions(precision=10, suppress=True)
   
   # Load OpenRAVE environment
-  scene_file = '../xml/worlds/bimanual_setup.env.xml'
+  scene_file = model_path + '/worlds/bimanual_setup.env.xml'
   env = orpy.Environment()
   env.SetViewer('qtcoin')
   env.Load(scene_file)
@@ -20,7 +22,7 @@ if __name__ == "__main__":
   # Retrive robot and objects
   left_robot = env.GetRobot('denso_left')
   right_robot = env.GetRobot('denso_right')
-  Lshape = env.ReadKinBodyXMLFile('../xml/objects/Lshape.kinbody.xml')
+  Lshape = env.ReadKinBodyXMLFile(model_path + '/objects/Lshape.kinbody.xml')
   env.Add(Lshape)
   # Correct robots transformation
   T_left_robot = np.array([[ 1.   ,  0.   ,  0.   ,  0    ],

@@ -4,16 +4,18 @@ import numpy as np
 import openravepy as orpy
 import ikea_openrave.utils as rave_utils
 from time import time
+from bimanual.utils import utils
 from IPython import embed
 
-from bimanual.utils import utils
+import os.path as path
+model_path = path.abspath(path.join(path.dirname(__file__), "../xml"))
 
 class Comparison(object):
   def __init__(self):
     np.set_printoptions(precision=10, suppress=True)
 
     # Load OpenRAVE environment
-    scene_file = '../xml/worlds/bimanual_setup.env.xml'
+    scene_file = model_path + '/worlds/bimanual_setup.env.xml'
     env = orpy.Environment()
     env.SetViewer('qtcoin')
     env.Load(scene_file)
@@ -21,7 +23,7 @@ class Comparison(object):
     # Retrive robot and objects
     left_robot = env.GetRobot('denso_left')
     right_robot = env.GetRobot('denso_right')
-    stick = env.ReadKinBodyXMLFile('../xml/objects/ikea_stick.kinbody.xml')
+    stick = env.ReadKinBodyXMLFile(model_path + '/objects/ikea_stick.kinbody.xml')
     # Correct robots transformation
     T_left_robot = np.array([[ 1.   ,  0.   ,  0.   ,  0    ],
                             [ 0.   ,  1.   ,  0.   , -0.536],

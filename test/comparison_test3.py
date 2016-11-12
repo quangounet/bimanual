@@ -13,9 +13,7 @@ import os
 import numpy as np
 import openravepy as orpy
 # Planner
-import sys
-sys.path.append('../src/')
-from utils import utils
+from bimanual.utils import utils
 # Utils
 import ikea_openrave.utils as rave_utils
 import ikea_manipulation.utils as manip_utils
@@ -145,7 +143,7 @@ class ClosedChainMotion(object):
                     [left_robot, right_robot], upper_frame, q_robots_start,
                     q_robots_grasp, T_obj_start, T_obj_goal)
 
-    import ikea_planner.cc_planner_connect as ccp    
+    import bimanual.planners.ikea_planner.cc_planner_connect as ccp    
     ccplanner = ccp.CCPlanner(upper_frame, [left_robot, right_robot], debug=False)
     ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start,
                           q_robots_goal, q_robots_grasp, T_obj_start, nn=2,
@@ -154,7 +152,7 @@ class ClosedChainMotion(object):
     res = ccplanner.solve(timeout=10)
 
 
-    from ikea_planner.cc_planner_ms_connect import CCPlanner, CCQuery
+    from bimanual.planners.ikea_planner.cc_planner_ms_connect import CCPlanner, CCQuery
     ccplanner = CCPlanner(upper_frame, right_robot, left_robot, debug=False)
     ccquery = CCQuery(q_robots_start[1], q_robots_start[0], 
                         q_robots_goal[1], q_robots_goal[0],
@@ -165,7 +163,7 @@ class ClosedChainMotion(object):
     res = ccplanner.solve(timeout=20)
 
 
-    import cc_planner_regrasp as ccp
+    import bimanual.planners.cc_planner_regrasp as ccp
     ccplanner = ccp.CCPlanner(upper_frame, [left_robot, right_robot], debug=False)
     ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, 
                           q_robots_goal, q_robots_grasp, T_obj_start, nn=2, 

@@ -6,9 +6,6 @@ import ikea_openrave.utils as rave_utils
 from time import time
 from IPython import embed
 
-import sys
-sys.path.append('../src/')
-
 if __name__ == "__main__":
   # Generic configuration
   np.set_printoptions(precision=10, suppress=True)
@@ -56,7 +53,7 @@ if __name__ == "__main__":
   rep_time = 20
 
   ################ Different planner variations #################
-  import cc_planner as ccp
+  import bimanual.planners.cc_planner as ccp
   ccplanner = ccp.CCPlanner(cage, [left_robot, right_robot], debug=False)
   t = time()
   for i in xrange(rep_time):
@@ -69,7 +66,7 @@ if __name__ == "__main__":
   print (time()-t)/rep_time
 
 
-  import cc_planner as ccp
+  import bimanual.planners.cc_planner as ccp
   ccplanner = ccp.CCPlanner(cage, [left_robot, right_robot], debug=False)
   ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, q_robots_goal,
                         q_robots_grasp, T_obj_start, nn=2, step_size=0.5,
@@ -77,7 +74,7 @@ if __name__ == "__main__":
   ccplanner.set_query(ccquery)
   res = ccplanner.solve(timeout=20)
 
-  import cc_planner_connect as ccp
+  import bimanual.planners.cc_planner_connect as ccp
   ccplanner = ccp.CCPlanner(cage, [left_robot, right_robot], debug=False)
   ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, q_robots_goal,
                         q_robots_grasp, T_obj_start, nn=2, step_size=0.5,
@@ -86,7 +83,7 @@ if __name__ == "__main__":
   res = ccplanner.solve(timeout=20)
 
 
-  import cc_planner_ms as ccp
+  import bimanual.planners.cc_planner_ms as ccp
   ccplanner = ccp.CCPlanner(cage, left_robot, right_robot, debug=False)
   ccquery = ccp.CCQuery(q_robots_start[0], q_robots_start[1], 
                         q_robots_goal[0], q_robots_goal[1],
@@ -99,7 +96,7 @@ if __name__ == "__main__":
 
 
 
-  import cc_planner_ms_connect as ccp
+  import bimanual.planners.cc_planner_ms_connect as ccp
   ccplanner = ccp.CCPlanner(cage, left_robot, right_robot, debug=False)
   ccquery = ccp.CCQuery(q_robots_start[0], q_robots_start[1], 
                         q_robots_goal[0], q_robots_goal[1],

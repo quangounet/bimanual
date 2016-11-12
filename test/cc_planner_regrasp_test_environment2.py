@@ -5,9 +5,7 @@ import openravepy as orpy
 import ikea_openrave.utils as rave_utils
 from IPython import embed
 
-import sys
-sys.path.append('../src/')
-from utils import utils
+from bimanual.utils import utils
 
 if __name__ == "__main__":
   # Generic configuration
@@ -87,7 +85,7 @@ if __name__ == "__main__":
   embed()
   exit(0)
 
-  import cc_planner_regrasp as ccp 
+  import bimanual.planners.cc_planner_regrasp as ccp 
   ccplanner = ccp.CCPlanner(Lshape, [left_robot, right_robot], debug=False)
   ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, 
                         q_robots_goal, q_robots_grasp, T_obj_start, nn=2, 
@@ -95,7 +93,7 @@ if __name__ == "__main__":
   ccplanner.set_query(ccquery)
   res = ccplanner.solve(timeout=20)
 
-  import cc_planner_regrasp_transfer as ccp 
+  import bimanual.planners.cc_planner_regrasp_transfer as ccp 
   ccplanner = ccp.CCPlanner(Lshape, [left_robot, right_robot], 
                             plan_regrasp=True, debug=False)
   ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, 

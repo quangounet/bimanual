@@ -5,9 +5,7 @@ import openravepy as orpy
 import ikea_openrave.utils as rave_utils
 from IPython import embed
 
-import sys
-sys.path.append('../src/')
-from utils import utils
+from bimanual.utils import utils
 
 if __name__ == "__main__":
   # Generic configuration
@@ -87,7 +85,7 @@ if __name__ == "__main__":
   embed()
   exit(0)
 
-  import cc_planner_regrasp as ccp 
+  import bimanual.planners.cc_planner_regrasp as ccp 
   ccplanner = ccp.CCPlanner(Lshape, [left_robot, right_robot], 
                             plan_regrasp=True, debug=False)
   ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, 
@@ -96,7 +94,7 @@ if __name__ == "__main__":
   ccplanner.set_query(ccquery)
   res = ccplanner.solve(timeout=100)
 
-  import cc_planner_regrasp_transfer as ccp 
+  import bimanual.planners.cc_planner_regrasp_transfer as ccp 
   ccplanner = ccp.CCPlanner(Lshape, [left_robot, right_robot], 
                             plan_regrasp=True, debug=False)
   ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, 
@@ -112,7 +110,7 @@ if __name__ == "__main__":
 
   rep = 50
   from time import time
-  import cc_planner_regrasp as ccp 
+  import bimanual.planners.cc_planner_regrasp as ccp 
   ccplanner = ccp.CCPlanner(Lshape, [left_robot, right_robot], 
                             plan_regrasp=True, debug=False)
   t2 = time() 
@@ -128,7 +126,7 @@ if __name__ == "__main__":
       i += 1
   t2_end = time()
 
-  import cc_planner_regrasp_transfer as ccp 
+  import bimanual.planners.cc_planner_regrasp_transfer as ccp 
   ccplanner = ccp.CCPlanner(Lshape, [left_robot, right_robot], 
                             plan_regrasp=True, debug=False)
   t3 = time() 

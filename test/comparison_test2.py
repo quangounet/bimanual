@@ -7,9 +7,7 @@ import ikea_openrave.utils as rave_utils
 from time import time
 from IPython import embed
 
-import sys
-sys.path.append('../src/')
-from utils import utils
+from bimanual.utils import utils
 
 class Comparison(object):
   def __init__(self):
@@ -91,7 +89,7 @@ class Comparison(object):
 
     rep_time = 20
 
-    from cc_planner_connect import CCPlanner, CCQuery
+    from bimanual.planners.cc_planner_connect import CCPlanner, CCQuery
     ccplanner = CCPlanner(Lshape, [left_robot, right_robot], debug=False)
     t = time()
     for i in xrange(rep_time):
@@ -102,7 +100,7 @@ class Comparison(object):
       res = ccplanner.solve(timeout=200)  
     print (time()-t)/rep_time
 
-    from cc_planner_ms_connect import CCPlanner, CCQuery
+    from bimanual.planners.cc_planner_ms_connect import CCPlanner, CCQuery
     ccplanner = CCPlanner(Lshape, left_robot, right_robot, debug=False)
     t = time()
     for i in xrange(rep_time):

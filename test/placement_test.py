@@ -35,7 +35,7 @@ if __name__ == "__main__":
 
   chair = env.ReadKinBodyXMLFile('/home/zhouxian/git/pymanip/pymanip/models/chair.xml')
   T_chair = np.array(
-    [[ -2.77555756e-17,  -1.00000000e+00,   0.00000000e+00,   4.38579321e-01],
+    [[ -2.77555756e-17,  -1.00000000e+00,   0.00000000e+00,   2.88579321e-01],
      [ -5.96515267e-01,  -2.77555756e-17,   8.02601730e-01,  -2.93648541e-02],
      [ -8.02601730e-01,   0.00000000e+00,  -5.96515267e-01,   3.80555246e-01],
      [  0.00000000e+00,   0.00000000e+00,   0.00000000e+00,   1.00000000e+00]])
@@ -44,6 +44,7 @@ if __name__ == "__main__":
 
   myObject = myobject.MyObject(chair)
   myObject.SetRestingSurfaceTransform(T_table)
+
   env.Load(scene_file)
 
   # Retrive robot and objects
@@ -77,8 +78,6 @@ if __name__ == "__main__":
 
   embed()
   exit(0)
-
-
   # Choose one grasp for testing
   qgrasp_l = [14, 2, 0, -0.05429823617575867]
   qgrasp_r = [5, 0, 2, -0.10022448427655264]
@@ -92,3 +91,5 @@ if __name__ == "__main__":
   mu = 0.5
   placementType = 2 # placing on a vertex
   res = intermediateplacement.ComputeFeasibleClosePlacements([left_robot, right_robot], [qgrasp_l, qgrasp_r], chair, T_chair, T_table, fmax, mu, placementType=placementType, myObject=myObject)
+
+

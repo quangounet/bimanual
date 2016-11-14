@@ -5,6 +5,8 @@ import openravepy as orpy
 import ikea_openrave.utils as rave_utils
 from bimanual.utils import utils
 from IPython import embed
+import pymanip.planningutils.utils as pymanip_utils
+from pymanip.planningutils import myobject, intermediateplacement, staticequilibrium
 
 import os.path as path
 model_path = path.abspath(path.join(path.dirname(__file__), "../xml"))
@@ -14,16 +16,19 @@ if __name__ == "__main__":
   np.set_printoptions(precision=10, suppress=True)
   
   # Load OpenRAVE environment
-  scene_file = model_path + '/worlds/bimanual_setup.env.xml'
+  scene_file = model_path + '/worlds/bimanual_setup_regrasp.env.xml'
   env = orpy.Environment()
   env.SetViewer('qtcoin')
+
+  Lshape = env.ReadKinBodyXMLFile(model_path + '/objects/Lshape_regrasp.kinbody.xml')
+  env.Add(Lshape)
+  myObject = myobject.MyObject(Lshape)
+  
   env.Load(scene_file)
 
   # Retrive robot and objects
   left_robot = env.GetRobot('denso_left')
   right_robot = env.GetRobot('denso_right')
-  Lshape = env.ReadKinBodyXMLFile(model_path + '/objects/Lshape.kinbody.xml')
-  env.Add(Lshape)
   # Correct robots transformation
   T_left_robot = np.array([[ 1.   ,  0.   ,  0.   ,  0    ],
                           [ 0.   ,  1.   ,  0.   , -0.536],
@@ -33,18 +38,17 @@ if __name__ == "__main__":
                             [ 0.   ,  1.   ,  0.   , 0.536],
                             [ 0.   ,  0.   ,  1.   , 0],
                             [ 0.   ,  0.   ,  0.   , 1.   ]])
-  T_Lshape = np.array([[ 0.   ,  1.   ,  0.   ,  0.26 ],
-                      [ 1.   , -0.   ,  0.   , -0.175],
-                      [ 0.   , -0.   , -1.   ,  0.176],
-                      [ 0.   ,  0.   ,  0.   ,  1.   ]])
+  T_Lshape = np.array([[ 0.   ,  1.   ,  0.   ,  0.37 ],
+                       [ 1.   , -0.   ,  0.   ,  0.005],
+                       [ 0.   , -0.   , -1.   ,  0.159],
+                       [ 0.   ,  0.   ,  0.   ,  1.   ]])
+  T_table = np.eye(4)
   with env:
     left_robot.SetTransform(T_left_robot)
     right_robot.SetTransform(T_right_robot)
     Lshape.SetTransform(T_Lshape)
-    env.Remove(env.GetKinBody('table'))
 
   # Add collision checker
-  env.SetCollisionChecker(orpy.RaveCreateCollisionChecker(env, 'ode'))
   env.SetCollisionChecker(orpy.RaveCreateCollisionChecker(env, 'fcl_'))
 
   manip_name = 'denso_ft_sensor_gripper'
@@ -59,188 +63,66 @@ if __name__ == "__main__":
   rave_utils.load_IK_model([left_robot, right_robot])
 
   ############### Move to pre-grasp position ###############
+  qgrasp_left = [1, 2, 1, 0.013]
+  qgrasp_right = [0, 2, 0, 0.13]
+
   left_robot.SetDOFValues(
-    [ 0.8041125559,  0.9405270996,  1.0073165866,  3.1415926536, 
-     -1.1937489674,  2.3749088827,  0.4560000086])
+    [ 0.6949541317,  1.3183457567,  0.2273780467,  3.1415926536,
+      -1.5958688501,  2.2657504585,  0.4560000086])
   right_robot.SetDOFValues(
-    [-0.9816436375,  0.7763915147,  1.2904895262, -3.1415926536, 
-     -1.0747116127,  2.1599490161,  0.4560000086])
+    [-0.8419911695,  0.9491865457,  0.9209619619, -3.1415926536,
+     -1.2714441461,  2.2996014841,  0.4560000086])
 
   ################## closed chain planning ###################
 
-  obj_translation_limits =  [[0.9, 0.5, 1.2], [-0.5, -0.4, -0.4]]
+  obj_translation_limits =  [[0.7, 0.5, 1.2], [-0.5, -0.5, 0]]
   q_robots_start = [left_robot.GetActiveDOFValues(),
                     right_robot.GetActiveDOFValues()]
   q_robots_grasp = [left_robot.GetDOFValues()[-1],
                     right_robot.GetDOFValues()[-1]]
   T_obj_start = Lshape.GetTransform()
-  T_obj_goal = np.array(
-    [[ 0.          , -0.6233531712, -0.7819404223,  0.0683513284],
-     [ 1.          ,  0.          ,  0.          , -0.1750002205],
-     [ 0.          , -0.7819404223,  0.6233531712,  0.84509027  ],
-     [ 0.          ,  0.          ,  0.          ,  1.          ]])
+  T_obj_goal = np.array([[ 0.   ,  1.   ,  0.   , -0.23],
+                         [ 1.   , -0.   ,  0.   ,  0.005],
+                         [ 0.   , -0.   , -1.   ,  0.159],
+                         [ 0.   ,  0.   ,  0.   ,  1.   ]])
 
   q_robots_goal = utils.compute_bimanual_goal_configs(
                     [left_robot, right_robot], Lshape, q_robots_start,
-                     q_robots_grasp, T_obj_start, T_obj_goal)
+                     q_robots_grasp, T_obj_start, T_obj_goal, seeds=[0,0])
 
   embed()
   exit(0)
 
-  import bimanual.planners.cc_planner_regrasp as ccp 
-  ccplanner = ccp.CCPlanner(Lshape, [left_robot, right_robot], 
-                            plan_regrasp=True, debug=False)
-  ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, 
-                        q_robots_goal, q_robots_grasp, T_obj_start, nn=2, 
-                        step_size=0.5, regrasp_limit=2)
-  ccplanner.set_query(ccquery)
-  res = ccplanner.solve(timeout=100)
+  left_robot.SetDOFValues([0],[6])
+  right_robot.SetDOFValues([0],[6])
+  Lshape.SetTransform(np.array(
+      [[ 0.2639622163,  0.8893508793,  0.373334919 ,  0.2613566816],
+       [ 0.9586656352, -0.2845350591, -0.0000000021,  0.0416169688],
+       [ 0.1062268713,  0.3579033579, -0.9276966305,  0.1387752742],
+       [ 0.          ,  0.          ,  0.          ,  1.          ]]))
+
+
+  T_left_gripper = pymanip_utils.ComputeTGripper2(
+                      Lshape, qgrasp_left[0], qgrasp_left)
+  T_right_gripper = pymanip_utils.ComputeTGripper2(
+                      Lshape, qgrasp_right[0], qgrasp_right)
+  left_robot.SetActiveDOFValues(left_manip.FindIKSolution(T_left_gripper, orpy.IkFilterOptions.CheckEnvCollisions))
+  right_robot.SetActiveDOFValues(right_manip.FindIKSolution(T_right_gripper, orpy.IkFilterOptions.CheckEnvCollisions))
+
+  fmax = 100
+  mu = 0.5
+  res = intermediateplacement.ComputeFeasibleClosePlacements([left_robot, right_robot], [qgrasp_left, qgrasp_right], Lshape, Lshape.GetTransform(), T_table, fmax, mu, placementType=2, myObject=myObject)
+
 
   import bimanual.planners.cc_planner_regrasp_transfer as ccp 
   ccplanner = ccp.CCPlanner(Lshape, [left_robot, right_robot], 
                             plan_regrasp=True, debug=False)
   ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, 
                         q_robots_goal, q_robots_grasp, T_obj_start, nn=2, 
-                        step_size=0.5, regrasp_limit=3)
+                        step_size=0.5, regrasp_limit=1)
   ccplanner.set_query(ccquery)
   res = ccplanner.solve(timeout=30)
 
+  ccplanner.shortcut(ccquery, maxiters=[20, 50])
+  ccplanner.visualize_cctraj(ccquery.cctraj, speed=2)
 
-  ccplanner.shortcut(ccquery, maxiters=[40, 50])
-  ccplanner.visualize_cctraj(ccquery.cctraj, speed=5)
-
-
-  rep = 50
-  from time import time
-  import bimanual.planners.cc_planner_regrasp as ccp 
-  ccplanner = ccp.CCPlanner(Lshape, [left_robot, right_robot], 
-                            plan_regrasp=True, debug=False)
-  t2 = time() 
-  i = 0
-  while i < rep:
-    print 'i: ', i
-    ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, 
-                          q_robots_goal, q_robots_grasp, T_obj_start, nn=2, 
-                          step_size=0.5, regrasp_limit=2)
-    ccplanner.set_query(ccquery)
-    res = ccplanner.solve(timeout=50)
-    if res:
-      i += 1
-  t2_end = time()
-
-  import bimanual.planners.cc_planner_regrasp_transfer as ccp 
-  ccplanner = ccp.CCPlanner(Lshape, [left_robot, right_robot], 
-                            plan_regrasp=True, debug=False)
-  t3 = time() 
-  i = 0
-  while i < rep:
-    print 'i: ', i
-    ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, 
-                          q_robots_goal, q_robots_grasp, T_obj_start, nn=2, 
-                          step_size=0.5, regrasp_limit=3)
-    ccplanner.set_query(ccquery)
-    res = ccplanner.solve(timeout=50)
-    if res:
-      i += 1
-  t3_end = time()
-
-  print (t2_end-t2)/rep
-  print (t3_end-t3)/rep  # 10.84s
-
-
-
-
-left_robot.SetActiveDOFValues(np.array([1.3286037675828692, 1.61926880978681, -0.78215209411198694, 4.0283431951051281, 0.93621987466452217, -1.0108507059372083]))
-
-right_robot.SetActiveDOFValues([-0.89919974486785126,  0.87162093934540275,  1.2360258804531066,  -0.47815594937409694,  -1.5946827762340383,  0.090781819060121921])
-
-q_robot = np.array([2.2423920808053284,  -2.0633626740460622,  1.2360199965182757,  -4.1702100454797009,  -0.56691154243021036,  1.0538235669215026])
-
-basemanip = right_basemanip
-robot = right_robot
-c = robot.GetController()
-
-Lshape.SetTransform(np.array(
-  [[ 0.496487317 , -0.5973714785,  0.6297996989,  0.3379715483],
-   [ 0.7947580193,  0.6046029621, -0.0530560928, -0.1244274658],
-   [-0.3490845669,  0.5268800384,  0.7749434755,  0.6898874894],
-   [ 0.          ,  0.          ,  0.          ,  1.          ]]))
-
-left_taskmanip.ReleaseFingers()
-
-right_taskmanip.ReleaseFingers()
-
-
-from time import time
-t = time()
-traj = basemanip.MoveActiveJoints(goal=q_robot, execute=False, outputtrajobj=True)
-print time()-t
-
-
-t = time()
-params = orpy.Planner.PlannerParameters()
-params.SetRobotActiveJoints(robot)
-params.SetGoalConfig(q_robot) # set goal to all ones
-# params.SetExtraParameters("""<_postprocessing planner="linearsmoother">
-#     <_nmaxiterations>1</_nmaxiterations>
-# </_postprocessing>""")
-params.SetExtraParameters("<_postprocessing></_postprocessing>")
-planner=orpy.RaveCreatePlanner(env,'birrt')
-planner.InitPlan(robot, params)
-traj = orpy.RaveCreateTrajectory(env,'')
-planner.PlanPath(traj)
-print time()-t
-
-c.SetPath(traj)
-robot.SetActiveDOFValues([-0.89919974486785126,  0.87162093934540275,  1.2360258804531066,  -0.47815594937409694,  -1.5946827762340383,  0.090781819060121921])
-
-
-
-###############################################
-
-
-left_robot.SetActiveDOFValues(np.array([1.1179185740387636, 0.9386752793904507, 0.80032749713981743, -2.1946447274984533, 1.0806177078710155, 1.5873185270739358]))
-
-right_robot.SetActiveDOFValues(np.array([-1.3452288403551229, 0.38678944640524932, 1.012264320407571, -1.1359528270330019, -1.476739947025685, 2.8216469080645283]))
-
-q_robot = np.array([1.1179190426593697, 1.6992327458331573, -0.73367709448158691, 4.6567772140613615, 0.79973950741550781, 0.67549521798187973])
-
-basemanip = left_basemanip
-robot = left_robot
-c = robot.GetController()
-
-Lshape.SetTransform(np.array(
-      [[-0.4660339977, -0.0091527126,  0.8847194702,  0.4715947041],
-       [ 0.3627313889, -0.9140248958,  0.1816161591,  0.0891404323],
-       [ 0.8069933411,  0.4055548269,  0.4292866523,  0.538749835 ],
-       [ 0.          ,  0.          ,  0.          ,  1.          ]]))
-
-left_taskmanip.ReleaseFingers()
-
-right_taskmanip.ReleaseFingers()
-
-
-from time import time
-t = time()
-try: traj = basemanip.MoveActiveJoints(goal=q_robot, execute=False, outputtrajobj=True)
-except:
-  print time()-t
-
-
-t = time()
-params = orpy.Planner.PlannerParameters()
-params.SetRobotActiveJoints(robot)
-params.SetGoalConfig(q_robot) # set goal to all ones
-# forces parabolic planning with 40 iterations
-# params.SetExtraParameters("""<_postprocessing planner="parabolicsmoother">
-#     <_nmaxiterations>40</_nmaxiterations>
-# </_postprocessing>""")
-params.SetExtraParameters("""<_nmaxiterations>5000</_nmaxiterations><_postprocessing></_postprocessing>""")
-planner=orpy.RaveCreatePlanner(env,'birrt')
-planner.InitPlan(robot, params)
-traj = orpy.RaveCreateTrajectory(env,'')
-planner.PlanPath(traj)
-print time()-t
-
-c.SetPath(traj)
-robot.SetActiveDOFValues(np.array([1.1179185740387636, 0.9386752793904507, 0.80032749713981743, -2.1946447274984533, 1.0806177078710155, 1.5873185270739358]))

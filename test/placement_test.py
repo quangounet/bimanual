@@ -4,8 +4,8 @@ import numpy as np
 import openravepy as orpy
 import ikea_openrave.utils as rave_utils
 from bimanual.utils import utils
+from bimanual.utils import placement_utils as putils
 from IPython import embed
-
 import pymanip.planningutils.utils as pymanip_utils
 from pymanip.planningutils import myobject, intermediateplacement, staticequilibrium
 
@@ -17,39 +17,19 @@ if __name__ == "__main__":
   np.set_printoptions(precision=10, suppress=True)
   
   # Load OpenRAVE environment
-  scene_file = model_path + '/worlds/bimanual_setup2.env.xml'
+  scene_file = model_path + '/worlds/bimanual_setup_regrasp.env.xml'
   env = orpy.Environment()
   env.SetViewer('qtcoin')
-  env.SetCollisionChecker(orpy.RaveCreateCollisionChecker(env, 'fcl_'))
+
+  Lshape = env.ReadKinBodyXMLFile(model_path + '/objects/Lshape_regrasp.kinbody.xml')
+  env.Add(Lshape)
   
-  table = orpy.RaveCreateKinBody(env, '')
-  table.InitFromBoxes(np.array([[0.0, 0.0, -0.02001, 0.5, 1.0, 0.02]]))
-  table.SetName('table')
-  table.GetLinks()[0].GetGeometries()[0].SetDiffuseColor([1, 0.8, 0.6])
-  T_table = np.array([[-1.0,  0.0,  0.0,  0.6385794],
-                     [ 0.0, -1.0,  0.0,  0.0],
-                     [ 0.0,  0.0,  1.0,  0.1362327],
-                     [ 0.0,  0.0,  0.0,  1.0]])
-  env.Add(table)
-  table.SetTransform(T_table)
-
-  chair = env.ReadKinBodyXMLFile('/home/zhouxian/git/pymanip/pymanip/models/chair.xml')
-  T_chair = np.array(
-    [[ -2.77555756e-17,  -1.00000000e+00,   0.00000000e+00,   2.88579321e-01],
-     [ -5.96515267e-01,  -2.77555756e-17,   8.02601730e-01,  -2.93648541e-02],
-     [ -8.02601730e-01,   0.00000000e+00,  -5.96515267e-01,   3.80555246e-01],
-     [  0.00000000e+00,   0.00000000e+00,   0.00000000e+00,   1.00000000e+00]])
-  env.Add(chair)
-  chair.SetTransform(T_chair)
-
-  myObject = myobject.MyObject(chair)
-  myObject.SetRestingSurfaceTransform(T_table)
-
   env.Load(scene_file)
 
   # Retrive robot and objects
   left_robot = env.GetRobot('denso_left')
   right_robot = env.GetRobot('denso_right')
+  table = env.GetKinBody('table')
   # Correct robots transformation
   T_left_robot = np.array([[ 1.   ,  0.   ,  0.   ,  0    ],
                           [ 0.   ,  1.   ,  0.   , -0.536],
@@ -58,12 +38,20 @@ if __name__ == "__main__":
   T_right_robot = np.array([[ 1.   ,  0.   ,  0.   , 0.012],
                             [ 0.   ,  1.   ,  0.   , 0.536],
                             [ 0.   ,  0.   ,  1.   , 0],
-                            [ 0.   ,  0.   ,  0.   , 1.   ]])    
-
+                            [ 0.   ,  0.   ,  0.   , 1.   ]])
+  T_Lshape = np.array([[ 0.   ,  1.   ,  0.   ,  0.37 ],
+                       [ 1.   , -0.   ,  0.   ,  0.005],
+                       [ 0.   , -0.   , -1.   ,  0.159],
+                       [ 0.   ,  0.   ,  0.   ,  1.   ]])
+  T_table = np.eye(4)
   with env:
     left_robot.SetTransform(T_left_robot)
     right_robot.SetTransform(T_right_robot)
+    Lshape.SetTransform(T_Lshape)
+    table.SetTransform(T_table)
 
+  # Add collision checker
+  env.SetCollisionChecker(orpy.RaveCreateCollisionChecker(env, 'fcl_'))
 
   manip_name = 'denso_ft_sensor_gripper'
   left_manip = left_robot.SetActiveManipulator(manip_name)
@@ -76,20 +64,37 @@ if __name__ == "__main__":
   rave_utils.disable_gripper([left_robot, right_robot])
   rave_utils.load_IK_model([left_robot, right_robot])
 
+  ############### Move to pre-grasp position ###############
+  qgrasp_left = [1, 2, 1, 0.013]
+  qgrasp_right = [0, 2, 0, 0.13]
+
+  left_robot.SetActiveDOFValues(
+    [ 0.6949541317,  1.3183457567,  0.2273780467,  3.1415926536,
+      -1.5958688501,  2.2657504585])
+  right_robot.SetActiveDOFValues(
+    [-0.8419911695,  0.9491865457,  0.9209619619, -3.1415926536,
+     -1.2714441461,  2.2996014841])
+
   embed()
   exit(0)
-  # Choose one grasp for testing
-  qgrasp_l = [14, 2, 0, -0.05429823617575867]
-  qgrasp_r = [5, 0, 2, -0.10022448427655264]
 
-  T_left_gripper = pymanip_utils.ComputeTGripper2(chair, qgrasp_l[0], qgrasp_l)
-  T_right_gripper = pymanip_utils.ComputeTGripper2(chair, qgrasp_r[0], qgrasp_r)
-  left_robot.SetActiveDOFValues(left_manip.FindIKSolutions(T_left_gripper, orpy.IkFilterOptions.CheckEnvCollisions)[0])
-  right_robot.SetActiveDOFValues(right_manip.FindIKSolutions(T_right_gripper, orpy.IkFilterOptions.CheckEnvCollisions)[0])
-  # Compute a feasible placement on the floor
+  myObject = putils.create_placement_object(Lshape, env, T_rest=T_table)
+  Lshape.SetTransform(np.array(
+      [[ 0.2639622163,  0.8893508793,  0.373334919 ,  0.2613566816],
+       [ 0.9586656352, -0.2845350591, -0.0000000021,  0.0416169688],
+       [ 0.1062268713,  0.3579033579, -0.9276966305,  0.1387752742],
+       [ 0.          ,  0.          ,  0.          ,  1.          ]]))
+
+  T_left_gripper = pymanip_utils.ComputeTGripper2(
+                      Lshape, qgrasp_left[0], qgrasp_left)
+  T_right_gripper = pymanip_utils.ComputeTGripper2(
+                      Lshape, qgrasp_right[0], qgrasp_right)
+  left_robot.SetActiveDOFValues(left_manip.FindIKSolution(T_left_gripper, orpy.IkFilterOptions.CheckEnvCollisions))
+  right_robot.SetActiveDOFValues(right_manip.FindIKSolution(T_right_gripper, orpy.IkFilterOptions.CheckEnvCollisions))
+
   fmax = 100
   mu = 0.5
-  placementType = 2 # placing on a vertex
-  res = intermediateplacement.ComputeFeasibleClosePlacements([left_robot, right_robot], [qgrasp_l, qgrasp_r], chair, T_chair, T_table, fmax, mu, placementType=placementType, myObject=myObject)
+  res = intermediateplacement.ComputeFeasibleClosePlacements([left_robot, right_robot], [qgrasp_left, qgrasp_right], Lshape, Lshape.GetTransform(), T_table, fmax, mu, placementType=2, myObject=myObject)
+
 
 

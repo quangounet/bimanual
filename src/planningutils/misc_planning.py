@@ -54,7 +54,12 @@ def plan_transit_motion(robot, q_start, q_goal, pregrasp_start=True, pregrasp_go
         pregrasp_start = False
       else:
         new_q_start = traj_pregrasp_start.GetWaypoint(traj_pregrasp_start.GetNumWaypoints() -  1, traj_pregrasp_start.GetConfigurationSpecification().GetGroupFromName("joint_values"))
-        orpy.planningutils.RetimeActiveDOFTrajectory(traj_pregrasp_start, robot, hastimestamps=False, maxvelmult=0.9, maxaccelmult=0.81, plannername="parabolictrajectoryretimer")      
+        robot.SetActiveDOFValues(new_q_start)
+        if robot.CheckSelfCollision():
+          new_q_start = q_start
+          pregrasp_start = False
+        else:
+          orpy.planningutils.RetimeActiveDOFTrajectory(traj_pregrasp_start, robot, hastimestamps=False, maxvelmult=0.9, maxaccelmult=0.81, plannername="parabolictrajectoryretimer")      
     else:
       new_q_start = q_start
 
@@ -75,11 +80,18 @@ def plan_transit_motion(robot, q_start, q_goal, pregrasp_start=True, pregrasp_go
         pregrasp_goal = False
       else:
         new_q_goal = traj_pregrasp_goal.GetWaypoint(traj_pregrasp_goal.GetNumWaypoints() -  1, traj_pregrasp_goal.GetConfigurationSpecification().GetGroupFromName("joint_values"))
-        traj_pregrasp_goal_rev = orpy.planningutils.ReverseTrajectory(traj_pregrasp_goal)
-        orpy.planningutils.RetimeActiveDOFTrajectory(traj_pregrasp_goal_rev, robot, hastimestamps=False, maxvelmult=0.9, maxaccelmult=0.81, plannername="parabolictrajectoryretimer")
-      
+        robot.SetActiveDOFValues(new_q_goal)
+        if robot.CheckSelfCollision():
+          new_q_goal = q_goal
+          pregrasp_goal = False
+        else:
+          traj_pregrasp_goal_rev = orpy.planningutils.ReverseTrajectory(traj_pregrasp_goal)
+          orpy.planningutils.RetimeActiveDOFTrajectory(traj_pregrasp_goal_rev, robot, hastimestamps=False, maxvelmult=0.9, maxaccelmult=0.81, plannername="parabolictrajectoryretimer")      
     else:
       new_q_goal = q_goal
+
+    _log.info("new_q_start = {0}".format(new_q_start.__repr__()))
+    _log.info("new_q_goal = {0}".format(new_q_goal.__repr__()))
 
     # Plan a motion connecting new_q_start and new_q_goal
     try:
@@ -89,6 +101,7 @@ def plan_transit_motion(robot, q_start, q_goal, pregrasp_start=True, pregrasp_go
       params.SetRobotActiveJoints(robot) # robot's active DOFs must be correctly set before calling this function
       params.SetInitialConfig(new_q_start)
       params.SetGoalConfig(new_q_goal)
+      params.SetMaxIterations(10000)
       extraparams = '<_postprocessing planner="parabolicsmoother2"><_nmaxiterations>100</_nmaxiterations></_postprocessing>'
       params.SetExtraParameters(extraparams)
       planner.InitPlan(robot, params)

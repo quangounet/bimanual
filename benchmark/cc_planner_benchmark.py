@@ -4,6 +4,7 @@ import numpy as np
 import openravepy as orpy
 from time import time
 from IPython import embed
+import ikea_openrave.utils as rave_utils
 
 import sys
 sys.path.append('../src/')

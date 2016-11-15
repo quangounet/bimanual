@@ -5,22 +5,18 @@ import numpy as np
 import openravepy as orpy
 import ikea_openrave.utils as rave_utils
 from time import time
+from bimanual.utils import utils
 from IPython import embed
 
-import sys
-sys.path.append('../src/')
-from utils import utils
+import os.path as path
+model_path = path.abspath(path.join(path.dirname(__file__), "../xml"))
 
 class Comparison(object):
   def __init__(self):
     np.set_printoptions(precision=10, suppress=True)
     
-    # Read configuration parameters
-    left_robot_name = 'left'
-    right_robot_name = 'right'
-
     # Load OpenRAVE environment
-    scene_file = '../xml/worlds/bimanual_setup.env.xml'
+    scene_file = model_path + '/worlds/bimanual_setup.env.xml'
     env = orpy.Environment()
     env.SetViewer('qtcoin')
     env.Load(scene_file)
@@ -28,7 +24,7 @@ class Comparison(object):
     # Retrive robot and objects
     left_robot = env.GetRobot('denso_left')
     right_robot = env.GetRobot('denso_right')
-    Lshape = env.ReadKinBodyXMLFile('../xml/objects/Lshape.kinbody.xml')
+    Lshape = env.ReadKinBodyXMLFile(model_path + '/objects/Lshape.kinbody.xml')
     env.Add(Lshape)
     # Correct robots transformation
     T_left_robot = np.array([[ 1.   ,  0.   ,  0.   ,  0    ],
@@ -49,8 +45,7 @@ class Comparison(object):
       Lshape.SetTransform(T_Lshape)
 
     # Add collision checker
-    collision_checker = orpy.RaveCreateCollisionChecker(env, 'ode')
-    env.SetCollisionChecker(collision_checker)
+    env.SetCollisionChecker(orpy.RaveCreateCollisionChecker(env, 'ode'))
 
     manip_name = 'denso_ft_sensor_gripper'
     left_manip = left_robot.SetActiveManipulator(manip_name)
@@ -64,8 +59,6 @@ class Comparison(object):
     left_taskmanip = orpy.interfaces.TaskManipulation(left_robot)
     right_basemanip = orpy.interfaces.BaseManipulation(right_robot)
     right_taskmanip = orpy.interfaces.TaskManipulation(right_robot)
-
-    orpy.RaveSetDebugLevel(orpy.DebugLevel.Fatal)
 
     ############### Move to pre-grasp position ###############
     left_robot.SetDOFValues(
@@ -93,13 +86,12 @@ class Comparison(object):
                       [left_robot, right_robot], Lshape, q_robots_start,
                        q_robots_grasp, T_obj_start, T_obj_goal)
 
-    ################## closed chain planning ###################
     embed()
     exit(0)
 
-    rep_time = 1
+    rep_time = 20
 
-    from cc_planner_connect import CCPlanner, CCQuery
+    from bimanual.planners.cc_planner_connect import CCPlanner, CCQuery
     ccplanner = CCPlanner(Lshape, [left_robot, right_robot], debug=False)
     t = time()
     for i in xrange(rep_time):
@@ -110,7 +102,7 @@ class Comparison(object):
       res = ccplanner.solve(timeout=200)  
     print (time()-t)/rep_time
 
-    from cc_planner_ms_connect import CCPlanner, CCQuery
+    from bimanual.planners.cc_planner_ms_connect import CCPlanner, CCQuery
     ccplanner = CCPlanner(Lshape, left_robot, right_robot, debug=False)
     t = time()
     for i in xrange(rep_time):

@@ -1,6 +1,7 @@
 """
 Closed-chain motion planner for bimual setup.
-Modified from cc_planner_ms.py to use RRT-connect.
+This one plans one robot first, but sampling tree extension target in 
+multi spaces.
 """
 
 import openravepy as orpy
@@ -9,8 +10,8 @@ import random
 from time import time, sleep
 import traceback
 import TOPP
-from utils.utils import colorize
-from utils import utils, heap, lie
+from bimanual.utils.utils import colorize
+from bimanual.utils import utils, heap, lie
 from IPython import embed
 
 # Global parameters
@@ -19,6 +20,8 @@ BW       = 1
 REACHED  = 0
 ADVANCED = 1
 TRAPPED  = 2
+ROBOT    = 0
+OBJECT   = 1
 
 IK_CHECK_COLLISION = orpy.IkFilterOptions.CheckEnvCollisions
 IK_IGNORE_COLLISION = orpy.IkFilterOptions.IgnoreSelfCollisions
@@ -46,6 +49,58 @@ class CCTrajectory(object):
     self.slave_wpts  = slave_wpts
     self.timestamps  = timestamps
     self.obj_T_rel   = obj_T_rel
+
+class SE3Config(object):
+  """
+  Class of configuration in SE(3) space. It stores both 
+  quaternion/translation and transformation matrix.
+  """
+
+  def __init__(self, q, p, qd=None, pd=None):
+    """
+    SE3Config constructor.
+
+    @type   q: numpy.ndarray
+    @param  q: Quaternion, (s, vx, vy, vz).
+    @type   p: numpy.ndarray
+    @param  p: Translation 3-vector, (x, y, z).
+    @type  qd: numop.ndarray
+    @param qd: Time derivative of q.
+    @type  pd: numpy.ndarray
+    @param pd: Time derivative of p (translational velocity.
+    """
+    quat_length = np.linalg.norm(q)
+    self.q = q / quat_length
+    if qd is None:
+      self.qd = np.zeros(3)
+    else:
+      self.qd = qd
+
+    self.p = p
+    if pd is None:
+      self.pd = np.zeros(3)
+    else:
+      self.pd = pd
+
+    self.T = orpy.matrixFromPose(np.hstack([self.q, self.p]))
+
+  @staticmethod
+  def from_matrix(T):
+    """
+    Initialize an SE3Config object from a transformation matrix.
+    T can be a None, since SE3Config of a goal vertex can be a None.
+
+    @type  T: numpy.ndarray
+    @param T: 4x4 transformation matrix
+    @rtype:   SE3Config
+    @return:  An SE3Config object initialized using T.
+    """    
+    if T is None:
+      return None
+
+    quat = orpy.quatFromRotationMatrix(T[0:3, 0:3])
+    p = T[0:3, 3]
+    return SE3Config(quat, p)        
 
 class MasterConfig(object):
   def __init__(self, q, qd=None, qdd=None):
@@ -104,7 +159,6 @@ class CCVertex(object):
     self.slave_wpts      = []
     self.timestamps      = []
     self.level           = 0
-    self.is_node         = True
 
 
 class CCTree(object):  
@@ -137,7 +191,7 @@ class CCTree(object):
     return self.vertices[index]        
   
   def add_vertex(self, v_new, parent_index, master_traj_str,
-                 slave_wpts, timestamps, is_node=True):
+                 slave_wpts, timestamps):
     """
     Add a C{CCVertex} to the tree.
 
@@ -165,7 +219,6 @@ class CCTree(object):
     v_new.timestamps      = timestamps
     v_new.index           = self.length
     v_new.level           = self.vertices[parent_index].level + 1
-    v_new.is_node         = is_node
     
     self.vertices.append(v_new)
     self.length += 1
@@ -250,7 +303,7 @@ class CCQuery(object):
 
   def __init__(self, q_master_start, q_slave_start, 
                q_master_goal, q_slave_goal, q_master_grasp, q_slave_grasp,
-               T_obj_start, obj_translation_limits=None, nn=-1, 
+               T_obj_start,  obj_translation_limits, nn=-1, 
                step_size=0.7, velocity_scale=1, interpolation_duration=None, 
                discr_timestep=5e-3, discr_check_timestep=None, 
                enable_bw=False):
@@ -355,12 +408,8 @@ class CCQuery(object):
     self.solved          = False
 
     # Parameters
-    if obj_translation_limits is None:
-      self.obj_upper_limits = np.ones(3) * np.inf
-      self.obj_lower_limits = np.ones(3) * -np.inf
-    else:
-      self.obj_upper_limits = obj_translation_limits[0]
-      self.obj_lower_limits = obj_translation_limits[1]
+    self.obj_upper_limits = obj_translation_limits[0]
+    self.obj_lower_limits = obj_translation_limits[1]
 
   def generate_final_master_traj(self): 
     if not self.solved:
@@ -459,6 +508,7 @@ class CCPlanner(object):
     self.master_manip = master.GetActiveManipulator()
     self.slave        = slave
     self.slave_manip  = slave.GetActiveManipulator()
+    self._ndof        = self.master.GetActiveDOF()
     self.master.SetActiveDOFs(self.master_manip.GetArmIndices())
     self.slave.SetActiveDOFs(self.slave_manip.GetArmIndices())
 
@@ -468,18 +518,34 @@ class CCPlanner(object):
     self._active_dofs = self.master_manip.GetArmIndices()
 
   def sample_master_config(self):
-    ndof = self.master.GetActiveDOF()
     [lowerlimits, upperlimits] = self.master.GetDOFLimits()
     vmax = self.master.GetDOFVelocityLimits()[self._active_dofs]
     
-    q_rand = np.zeros(ndof)
-    qd_rand = np.zeros(ndof)
+    q_rand = np.zeros(self._ndof)
+    qd_rand = np.zeros(self._ndof)
 
-    for i in xrange(ndof):
+    for i in xrange(self._ndof):
       q_rand[i] = _RNG.uniform(lowerlimits[i], upperlimits[i])
       # qd_rand[i] = _RNG.uniform(-vmax[i], vmax[i])
 
     return MasterConfig(q_rand, qd_rand)
+
+
+  def sample_SE3_config(self):
+    """
+    Return a random SE3 configuration C{SE3Config}.
+    This function does not do any feasibility checking since when
+    extending a vertex on a tree to this config, we do not use
+    this config directly.
+
+    @rtype:  SE3Config
+    @return: A random SE3 Configuration.
+    """ 
+    q_rand = lie.RandomQuat()
+    p_rand = np.asarray([_RNG.uniform(self._query.obj_lower_limits[i], 
+                        self._query.obj_upper_limits[i]) for i in xrange(3)])
+
+    return (q_rand, p_rand)
   
   def _check_grasping_pose(self):
     """
@@ -583,8 +649,7 @@ class CCPlanner(object):
       self._output_debug('Iteration no. {0}'.format(self._query.iteration_count), 'blue')
       t_begin = time()
 
-      master_config_rand = self.sample_master_config()
-      if (self._extend(master_config_rand) != TRAPPED):
+      if (self._extend() != TRAPPED):
         self._output_debug('Tree start : {0}; Tree end : {1}'.format(len(self._query.tree_start.vertices), len(self._query.tree_end.vertices)), 'green')
 
         if (self._connect() == REACHED):
@@ -622,7 +687,7 @@ class CCPlanner(object):
                             [self.slave_manip.GetArmDOF()])
     self.obj.SetTransform(query.v_start.config.T_obj)
 
-  def _extend(self, master_config_rand):
+  def _extend(self):
     """
     Extend the tree(s) in C{self._query} towards the given SE3 config.
 
@@ -636,12 +701,14 @@ class CCPlanner(object):
              -  B{ADVANCED}: when the tree is extended towards the given
                              config
     """
-    if (self._query.iteration_count - 1) % 2 == FW or not self._query.enable_bw:
-      return self._extend_fw(master_config_rand)
+    space_type = random.choice([OBJECT, ROBOT])
+    if ((self._query.iteration_count - 1) % 2 == FW 
+        or not self._query.enable_bw):
+      return self._extend_fw(space_type)
     else:
-      return self._extend_bw(master_config_rand)
+      return self._extend_bw(space_type)
 
-  def _extend_fw(self, master_config_rand):
+  def _extend_fw(self, space_type):
     """
     Extend C{tree_start} (rooted at v_start) towards the given SE3 config.
 
@@ -656,31 +723,80 @@ class CCPlanner(object):
                              config
     """
     status = TRAPPED
-    nnindices = self._nearest_neighbor_indices(master_config_rand, FW)
+    if space_type == ROBOT:
+      master_config_rand = self.sample_master_config()
+      nnindices = self._nearest_neighbor_indices(master_config_rand, FW)
+    elif space_type == OBJECT:
+      (q_obj_rand, p_obj_rand) = self.sample_SE3_config()
+      T_obj_rand = orpy.matrixFromPose(np.hstack([q_obj_rand, p_obj_rand]))
+      nnindices = self._nearest_neighbor_indices(T_obj_rand, FW, 
+                                                 config_type=OBJECT)
+
     for index in nnindices:
       v_near = self._query.tree_start[index]
       
       q_master_beg   = v_near.config.master_config.q
       qd_master_beg  = v_near.config.master_config.qd
       qdd_master_beg = v_near.config.master_config.qdd
-      
-      q_master_end   = master_config_rand.q
-      qd_master_end  = master_config_rand.qd
-      qdd_master_end = master_config_rand.qdd
 
-      # Check if master_config_rand is too far from v_near
-      delta = utils.distance(q_master_beg, q_master_end)
-      if np.sqrt(delta) <= self._query.step_size:
-        status = REACHED
-      else:
-        q_master_end = (q_master_beg + self._query.step_size * (q_master_end 
-                        - q_master_beg) / np.sqrt(delta))
-        status = ADVANCED
+      if space_type == ROBOT:
+        q_master_end   = master_config_rand.q
+        qd_master_end  = master_config_rand.qd
+        qdd_master_end = master_config_rand.qdd
 
-      T_master_end = utils.compute_endeffector_transform(
-                       self.master_manip, q_master_end)
+        # Check if master_config_rand is too far from v_near
+        delta = utils.distance(q_master_beg, q_master_end)
+        if np.sqrt(delta) <= self._query.step_size:
+          status = REACHED
+        else:
+          q_master_end = (q_master_beg + self._query.step_size 
+                          * (q_master_end - q_master_beg) / np.sqrt(delta))
+          status = ADVANCED
 
-      T_obj_end = np.dot(T_master_end, self._query.obj_T_rel)
+        T_master_end = utils.compute_endeffector_transform(
+                         self.master_manip, q_master_end)
+        T_obj_end = np.dot(T_master_end, self._query.obj_T_rel)
+
+      elif space_type == OBJECT:
+        T_obj_beg = v_near.config.T_obj
+
+        # Check if T_obj_rand is too far from v_near
+        delta = utils.SE3_distance(T_obj_rand, T_obj_beg, 1.0 / np.pi, 1.0)
+        if delta <= self._query.step_size:
+          self.master.SetActiveDOFValues(q_master_beg)
+          T_obj_end    = T_obj_rand
+          T_master_end = np.dot(T_obj_end, 
+                                np.linalg.inv(self._query.obj_T_rel))
+          q_master_end   = self.master_manip.FindIKSolution(
+                            T_master_end, IK_CHECK_COLLISION)
+          qd_master_end  = np.zeros(self._ndof)
+          qdd_master_end = np.zeros(self._ndof)
+          status = REACHED
+        else:
+          q_beg = orpy.quatFromRotationMatrix(T_obj_beg[0:3, 0:3])
+          p_beg = T_obj_beg[0:3, 3]
+          q_end = q_obj_rand
+          p_end = p_obj_rand
+
+          if not utils._is_close_axis(q_beg, q_end):
+            q_end = -q_end
+          q_end = q_beg + self._query.step_size * (q_end - q_beg) / delta
+          q_end /= np.sqrt(np.dot(q_end, q_end))
+          p_end = p_beg + self._query.step_size * (p_end - p_beg) / delta
+          T_obj_end = orpy.matrixFromPose(np.hstack([q_end, p_end]))
+          T_master_end = np.dot(T_obj_end, 
+                                np.linalg.inv(self._query.obj_T_rel))
+          q_master_end = self.master_manip.FindIKSolution(
+                            T_master_end, IK_CHECK_COLLISION)
+          qd_master_end  = np.zeros(self._ndof)
+          qdd_master_end = np.zeros(self._ndof)
+          status = ADVANCED
+
+      if q_master_end is None:
+        self._output_debug('TRAPPED : no master IK solution', bold=False)
+        status = TRAPPED
+        continue
+
       # Check collision
       res = self.is_collision_free_master_obj_config(q_master_end, T_obj_end)
       if not res:
@@ -742,9 +858,7 @@ class CCPlanner(object):
     return status
       
 
-      
-
-  def _extend_bw(self, master_config_rand):
+  def _extend_bw(self, space_type):
     """
     Extend C{tree_end} (rooted at v_goal) towards the given SE3 config.
 
@@ -759,7 +873,15 @@ class CCPlanner(object):
                              config
     """
     status = TRAPPED
-    nnindices = self._nearest_neighbor_indices(master_config_rand, BW)
+    if space_type == ROBOT:
+      master_config_rand = self.sample_master_config()
+      nnindices = self._nearest_neighbor_indices(master_config_rand, BW)
+    elif space_type == OBJECT:
+      (q_obj_rand, p_obj_rand) = self.sample_SE3_config()
+      T_obj_rand = orpy.matrixFromPose(np.hstack([q_obj_rand, p_obj_rand]))
+      nnindices = self._nearest_neighbor_indices(T_obj_rand, BW, 
+                                                 config_type=OBJECT)
+
     for index in nnindices:
       v_near = self._query.tree_end[index]
       
@@ -767,23 +889,63 @@ class CCPlanner(object):
       qd_master_end  = v_near.config.master_config.qd
       qdd_master_end = v_near.config.master_config.qdd
       
-      q_master_beg   = master_config_rand.q
-      qd_master_beg  = master_config_rand.qd
-      qdd_master_beg = master_config_rand.qdd
+      if space_type == ROBOT:
+        q_master_beg   = master_config_rand.q
+        qd_master_beg  = master_config_rand.qd
+        qdd_master_beg = master_config_rand.qdd
 
-      # Check if master_config_rand is too far from v_near
-      delta = utils.distance(q_master_beg, q_master_end)
-      if np.sqrt(delta) <= self._query.step_size:
-        status = REACHED
-      else:        
-        q_master_beg = (q_master_end + self._query.step_size * (q_master_beg 
-                        - q_master_end) / np.sqrt(delta))
-        status = ADVANCED
+        # Check if master_config_rand is too far from v_near
+        delta = utils.distance(q_master_beg, q_master_end)
+        if np.sqrt(delta) <= self._query.step_size:
+          status = REACHED
+        else:        
+          q_master_beg = (q_master_end + self._query.step_size 
+                          * (q_master_beg - q_master_end) / np.sqrt(delta))
+          status = ADVANCED
 
-      T_master_beg = utils.compute_endeffector_transform(
-                       self.master_manip, q_master_beg)
+        T_master_beg = utils.compute_endeffector_transform(
+                         self.master_manip, q_master_beg)
+        T_obj_beg = np.dot(T_master_beg, self._query.obj_T_rel)
 
-      T_obj_beg = np.dot(T_master_beg, self._query.obj_T_rel)
+      elif space_type == OBJECT:
+        T_obj_end = v_near.config.T_obj
+
+        # Check if T_obj_rand is too far from v_near
+        delta = utils.SE3_distance(T_obj_rand, T_obj_end, 1.0 / np.pi, 1.0)
+        if delta <= self._query.step_size:
+          self.master.SetActiveDOFValues(q_master_end)
+          T_obj_beg    = T_obj_rand
+          T_master_beg = np.dot(T_obj_beg, 
+                                np.linalg.inv(self._query.obj_T_rel))
+          q_master_beg   = self.master_manip.FindIKSolution(
+                            T_master_beg, IK_CHECK_COLLISION)
+          qd_master_beg  = np.zeros(self._ndof)
+          qdd_master_beg = np.zeros(self._ndof)
+          status = REACHED
+        else:
+          q_beg = q_obj_rand
+          p_beg = p_obj_rand
+          q_end = orpy.quatFromRotationMatrix(T_obj_end[0:3, 0:3])
+          p_end = T_obj_end[0:3, 3]
+
+          if not utils._is_close_axis(q_beg, q_end):
+            q_beg = -q_beg
+          q_beg = q_end + self._query.step_size * (q_beg - q_end) / delta
+          q_beg /= np.sqrt(np.dot(q_beg, q_beg))
+          p_beg = p_end + self._query.step_size * (p_beg - p_end) / delta
+          T_obj_beg = orpy.matrixFromPose(np.hstack([q_beg, p_beg]))
+          T_master_beg = np.dot(T_obj_beg, 
+                                np.linalg.inv(self._query.obj_T_rel))
+          q_master_beg = self.master_manip.FindIKSolution(
+                            T_master_beg, IK_CHECK_COLLISION)
+          qd_master_beg  = np.zeros(self._ndof)
+          qdd_master_beg = np.zeros(self._ndof)
+          status = ADVANCED
+
+      if q_master_beg is None:
+        self._output_debug('TRAPPED : no master IK solution', bold=False)
+        status = TRAPPED
+        continue
 
       # Check collision
       res = self.is_collision_free_master_obj_config(q_master_beg, T_obj_beg)
@@ -875,143 +1037,59 @@ class CCPlanner(object):
     v_test = self._query.tree_start.vertices[-1]
     nnindices = self._nearest_neighbor_indices(
                   v_test.config.master_config, BW)
+    status = TRAPPED
     for index in nnindices:
       v_near = self._query.tree_end[index]
-      while True:
-        q_master_beg   = v_test.config.master_config.q
-        qd_master_beg  = v_test.config.master_config.qd
-        qdd_master_beg = v_test.config.master_config.qdd
-        
-        q_master_end   = v_near.config.master_config.q
-        qd_master_end  = v_near.config.master_config.qd
-        qdd_master_end = v_near.config.master_config.qdd
+
+      q_master_beg   = v_test.config.master_config.q
+      qd_master_beg  = v_test.config.master_config.qd
+      qdd_master_beg = v_test.config.master_config.qdd
       
-        # Check distance
-        delta = utils.distance(q_master_beg, q_master_end)
-        if np.sqrt(delta) <= self._query.step_size:
-          status = REACHED
+      q_master_end   = v_near.config.master_config.q
+      qd_master_end  = v_near.config.master_config.qd
+      qdd_master_end = v_near.config.master_config.qdd
+      
+      # Interpolate trajectory
+      master_traj_str = utils.traj_str_5th_degree(
+                          q_master_beg, q_master_end,
+                          qd_master_beg, qd_master_end,
+                          qdd_master_beg, qdd_master_end,
+                          self._query.interpolation_duration)
+      # Check master DOF limit
+      if not utils.check_traj_str_DOF_limits(self.master, master_traj_str):
+        self._output_debug('TRAPPED : interpolated trajectory '
+                           'exceeds DOF limits', bold=False)
+        continue
 
-          # Interpolate trajectory
-          master_traj_str = utils.traj_str_5th_degree(
-                              q_master_beg, q_master_end,
-                              qd_master_beg, qd_master_end,
-                              qdd_master_beg, qdd_master_end,
-                              self._query.interpolation_duration)
+      # Check collision
+      master_traj = TrajectoryFromStr(master_traj_str)
+      if not self.is_collision_free_master_obj_traj(master_traj):
+        self._output_debug('TRAPPED : master/obj trajectory in collision',
+                           bold=False)
+        continue
+      
+      # Check reachability
+      passed, slave_wpts, timestamps = self.check_master_traj_reachability(
+        master_traj, v_near.config.q_slave, direction=BW)
+      if not passed:
+        self._output_debug('TRAPPED : master trajectory not reachable', 
+                           bold=False)
+        continue
 
-          # Check master DOF limit
-          if not utils.check_traj_str_DOF_limits(
-            self.master, master_traj_str):
-            self._output_debug('TRAPPED : interpolated trajectory '
-                               'exceeds DOF limits', bold=False)
-            status = TRAPPED
-            break
+      # Check similarity of terminal IK solutions
+      eps = 1e-3
+      if not utils.distance(v_test.config.q_slave, slave_wpts[0]) < eps:
+        self._output_debug('TRAPPED : slave IK solution discrepancy',
+                           bold=False)
+        continue
 
-          # Check collision
-          master_traj = TrajectoryFromStr(master_traj_str)
-          if not self.is_collision_free_master_obj_traj(master_traj):
-            self._output_debug('TRAPPED : master/obj trajectory in collision',
-                               bold=False)
-            status = TRAPPED
-            break
-          
-          # Check reachability
-          passed, slave_wpts, timestamps = \
-            self.check_master_traj_reachability(
-            master_traj, v_near.config.q_slave, direction=BW)
-          if not passed:
-            self._output_debug('TRAPPED : master trajectory not reachable', 
-                               bold=False)
-            status = TRAPPED
-            break
-
-          # Check similarity of terminal IK solutions
-          eps = 1e-3
-          if not utils.distance(v_test.config.q_slave, slave_wpts[0]) < eps:
-            self._output_debug('TRAPPED : slave IK solution discrepancy',
-                               bold=False)
-            status = TRAPPED
-            break
-
-          # Now the connection is successful
-          self._query.tree_end.vertices.append(v_near)
-          self._query.connecting_slave_wpts      = slave_wpts
-          self._query.connecting_timestamps      = timestamps
-          self._query.connecting_master_traj_str = master_traj_str
-
-          v_near.is_node = True
-          return status
-
-        else:        
-          status = ADVANCED
-
-          q_master_beg = (q_master_end + self._query.step_size 
-                          * (q_master_beg - q_master_end) / np.sqrt(delta))
-          T_master_beg = utils.compute_endeffector_transform(
-                           self.master_manip, q_master_beg)
-          T_obj_beg = np.dot(T_master_beg, self._query.obj_T_rel)
-
-          # Check new config collision
-          if not self.is_collision_free_master_obj_config(
-                  q_master_beg, T_obj_beg):
-            self._output_debug('TRAPPED : master/obj in collision', 
-                               bold=False)
-            status = TRAPPED
-            break  
-
-          # Check reachability
-          if not self.check_master_config_reachability(
-                  q_master_beg, T_master_beg, T_obj_beg):
-            self._output_debug('TRAPPED : config not reachable', bold=False)
-            status = TRAPPED
-            break      
-
-          # Interpolate trajectory
-          master_traj_str = utils.traj_str_5th_degree(
-                              q_master_beg, q_master_end,
-                              qd_master_beg, qd_master_end,
-                              qdd_master_beg, qdd_master_end,
-                              self._query.interpolation_duration)
-          # Check master DOF limit
-          if not utils.check_traj_str_DOF_limits(
-            self.master, master_traj_str):
-            self._output_debug('TRAPPED : interpolated trajectory '
-                               'exceeds DOF limits', bold=False)
-            status = TRAPPED
-            break
-
-          # Check collision
-          master_traj = TrajectoryFromStr(master_traj_str)
-          if not self.is_collision_free_master_obj_traj(master_traj):
-            self._output_debug('TRAPPED : master/obj trajectory in collision',
-                               bold=False)
-            status = TRAPPED
-            break
-          
-          # Check reachability
-          passed, slave_wpts, timestamps = \
-            self.check_master_traj_reachability(
-              master_traj, v_near.config.q_slave, direction=BW)
-          if not passed:
-            self._output_debug('TRAPPED : master trajectory not reachable', 
-                               bold=False)
-            status = TRAPPED
-            break
-
-          # Now this trajectory is alright.
-          self._output_debug('Successful : new vertex generated', 
-                              color='green', bold=False)
-          new_q_slave = slave_wpts[0]
-          new_master_config = MasterConfig(q_master_beg, qd_master_beg, 
-                                           qdd_master_beg)
-          new_cc_config = CCConfig(new_master_config, new_q_slave, T_obj_beg)
-          v_new = CCVertex(new_cc_config)
-          self._query.tree_end.add_vertex(v_new, v_near.index, 
-                                          master_traj_str, slave_wpts, 
-                                          timestamps, is_node=False)
-          v_near = v_new
-
-      if status == TRAPPED:
-        v_near.is_node = True
+      # Now the connection is successful
+      self._query.tree_end.vertices.append(v_near)
+      self._query.connecting_slave_wpts      = slave_wpts
+      self._query.connecting_timestamps      = timestamps
+      self._query.connecting_master_traj_str = master_traj_str
+      status = REACHED
+      return status
     return status        
 
 
@@ -1028,144 +1106,60 @@ class CCPlanner(object):
     v_test = self._query.tree_end.vertices[-1]
     nnindices = self._nearest_neighbor_indices(
                   v_test.config.master_config, FW)
+    status = TRAPPED
     for index in nnindices:
       v_near = self._query.tree_start[index]
-      while True:
-        q_master_beg   = v_near.config.master_config.q
-        qd_master_beg  = v_near.config.master_config.qd
-        qdd_master_beg = v_near.config.master_config.qdd
-        
-        q_master_end   = v_test.config.master_config.q
-        qd_master_end  = v_test.config.master_config.qd
-        qdd_master_end = v_test.config.master_config.qdd
       
-        # Check distance
-        delta = utils.distance(q_master_beg, q_master_end)
-        if np.sqrt(delta) <= self._query.step_size:
-          status = REACHED
+      q_master_beg   = v_near.config.master_config.q
+      qd_master_beg  = v_near.config.master_config.qd
+      qdd_master_beg = v_near.config.master_config.qdd
+      
+      q_master_end   = v_test.config.master_config.q
+      qd_master_end  = v_test.config.master_config.qd
+      qdd_master_end = v_test.config.master_config.qdd
+      
+      
+      # Interpolate trajectory
+      master_traj_str = utils.traj_str_5th_degree(
+                          q_master_beg, q_master_end,
+                          qd_master_beg, qd_master_end,
+                          qdd_master_beg, qdd_master_end,
+                          self._query.interpolation_duration)
+      # Check master DOF limit
+      if not utils.check_traj_str_DOF_limits(self.master, master_traj_str):
+        self._output_debug('TRAPPED : interpolated trajectory '
+                           'exceeds DOF limits', bold=False)
+        continue
 
-          # Interpolate trajectory
-          master_traj_str = utils.traj_str_5th_degree(
-                              q_master_beg, q_master_end,
-                              qd_master_beg, qd_master_end,
-                              qdd_master_beg, qdd_master_end,
-                              self._query.interpolation_duration)
-          # Check master DOF limit
-          if not utils.check_traj_str_DOF_limits(
-            self.master, master_traj_str):
-            self._output_debug('TRAPPED : interpolated trajectory '
-                               'exceeds DOF limits', bold=False)
-            status = TRAPPED
-            break
+      # Check collision
+      master_traj = TrajectoryFromStr(master_traj_str)
+      if not self.is_collision_free_master_obj_traj(master_traj):
+        self._output_debug('TRAPPED : master/obj trajectory in collision',
+                           bold=False)
+        continue
+      
+      # Check reachability
+      passed, slave_wpts, timestamps = self.check_master_traj_reachability(
+        master_traj, v_near.config.q_slave)
+      if not passed:
+        self._output_debug('TRAPPED : master trajectory not reachable', 
+                           bold=False)
+        continue
 
-          # Check collision
-          master_traj = TrajectoryFromStr(master_traj_str)
-          if not self.is_collision_free_master_obj_traj(master_traj):
-            self._output_debug('TRAPPED : master/obj trajectory in collision',
-                               bold=False)
-            status = TRAPPED
-            break
-          
-          # Check reachability
-          passed, slave_wpts, timestamps = \
-            self.check_master_traj_reachability(
-            master_traj, v_near.config.q_slave)
-          if not passed:
-            self._output_debug('TRAPPED : master trajectory not reachable', 
-                               bold=False)
-            status = TRAPPED
-            break
+      # Check similarity of terminal IK solutions
+      eps = 1e-3
+      if not utils.distance(v_test.config.q_slave, slave_wpts[-1]) < eps:
+        self._output_debug('TRAPPED : slave IK solution discrepancy',
+                           bold=False)
+        continue
 
-          # Check similarity of terminal IK solutions
-          eps = 1e-3
-          if not utils.distance(v_test.config.q_slave, slave_wpts[-1]) < eps:
-            self._output_debug('TRAPPED : slave IK solution discrepancy',
-                               bold=False)
-            status = TRAPPED
-            break
-
-          # Now the connection is successful
-          self._query.tree_start.vertices.append(v_near)
-          self._query.connecting_slave_wpts      = slave_wpts
-          self._query.connecting_timestamps      = timestamps
-          self._query.connecting_master_traj_str = master_traj_str
-
-          v_near.is_node = True
-          return status
-
-        else:
-          status = ADVANCED
-
-          q_master_end = (q_master_beg + self._query.step_size 
-                          * (q_master_end - q_master_beg) / np.sqrt(delta))
-          T_master_end = utils.compute_endeffector_transform(
-                           self.master_manip, q_master_end)
-          T_obj_end = np.dot(T_master_end, self._query.obj_T_rel)
-
-          # Check new config collision
-          if not self.is_collision_free_master_obj_config(
-                  q_master_end, T_obj_end):
-            self._output_debug('TRAPPED : master/obj in collision', 
-                               bold=False)
-            status = TRAPPED
-            break      
-
-          # Check reachability
-          if not self.check_master_config_reachability(
-                  q_master_end, T_master_end, T_obj_end):
-            self._output_debug('TRAPPED : config not reachable', bold=False)
-            status = TRAPPED
-            break      
-
-          # Interpolate trajectory
-          master_traj_str = utils.traj_str_5th_degree(
-                              q_master_beg, q_master_end,
-                              qd_master_beg, qd_master_end,
-                              qdd_master_beg, qdd_master_end,
-                              self._query.interpolation_duration)
-
-          # Check master DOF limit
-          if not utils.check_traj_str_DOF_limits(
-            self.master, master_traj_str):
-            self._output_debug('TRAPPED : interpolated trajectory '
-                               'exceeds DOF limits', bold=False)
-            status = TRAPPED
-            break      
-
-          # Check collision
-          master_traj = TrajectoryFromStr(master_traj_str)
-          if not self.is_collision_free_master_obj_traj(master_traj):
-            self._output_debug('TRAPPED : master/obj trajectory in collision',
-                               bold=False)
-            status = TRAPPED
-            break
-
-          # Check reachability
-          passed, slave_wpts, timestamps = \
-            self.check_master_traj_reachability(
-              master_traj, v_near.config.q_slave)
-          if not passed:
-            self._output_debug('TRAPPED : master trajectory not reachable', 
-                               bold=False)
-            status = TRAPPED
-            break
-
-          # Now this trajectory is alright.
-          self._output_debug('Successful : new vertex generated', 
-                             color='green', bold=False)
-          new_q_slave = slave_wpts[-1]
-          new_master_config = MasterConfig(q_master_end, qd_master_end, 
-                                           qdd_master_end)
-          new_cc_config = CCConfig(new_master_config, new_q_slave, T_obj_end)
-          v_new = CCVertex(new_cc_config)
-          self._query.tree_start.add_vertex(v_new, v_near.index, 
-                                            master_traj_str, slave_wpts, 
-                                            timestamps, is_node=False)
-          v_near = v_new
-
-      if status == TRAPPED:
-        v_near.is_node = True
-
+      # Now the connection is successful
+      self._query.tree_start.vertices.append(v_near)
+      self._query.connecting_slave_wpts      = slave_wpts
+      self._query.connecting_timestamps      = timestamps
+      self._query.connecting_master_traj_str = master_traj_str
+      status = REACHED
+      return status
     return status        
 
   
@@ -1192,62 +1186,6 @@ class CCPlanner(object):
       self.slave.Enable(True)
 
     return is_free
-
-  def test(self):
-    self.loose_gripper(self._query)
-    count = 0
-    t = time()
-    for i in xrange(10000):
-      master_config_rand = self.sample_master_config()
-      v_near = self._query.tree_start[0]
-      
-      q_master_beg   = v_near.config.master_config.q
-      qd_master_beg  = v_near.config.master_config.qd
-      qdd_master_beg = v_near.config.master_config.qdd
-      
-      q_master_end   = master_config_rand.q
-      qd_master_end  = master_config_rand.qd
-      qdd_master_end = master_config_rand.qdd
-
-      # Check if master_config_rand is too far from v_near
-      delta = utils.distance(q_master_beg, q_master_end)
-      if np.sqrt(delta) <= self._query.step_size:
-        pass
-      else:
-        q_master_end = (q_master_beg + self._query.step_size * (q_master_end 
-                        - q_master_beg) / np.sqrt(delta))
-
-      T_master_end = utils.compute_endeffector_transform(
-                       self.master_manip, q_master_end)
-
-      T_obj_end = np.dot(T_master_end, self._query.obj_T_rel)
-      # Check collision
-      if not self.is_collision_free_obj_config(q_master_end, T_obj_end):
-        count += 1
-    self.reset_config(self._query)
-    print time()-t
-    print count / 10000.0
-
-  def is_collision_free_obj_config(self, q_master, T_obj):
-    """
-    Check whether the given C{master_config} is collision-free.
-    This check ignores the robots, which will be checked later.
-
-    @type  master_config: MasterConfig
-    @param master_config: Master robot configuration to be checked.
-
-    @rtype:  bool
-    @return: B{True} if the config is collision-free.
-    """
-    with self.env:
-      self.slave.Enable(False)
-      self.master.SetActiveDOFValues(q_master)
-      self.obj.SetTransform(T_obj)
-      if self.env.CheckCollision(self.obj):
-        self.slave.Enable(True)
-        return False
-    self.slave.Enable(True)
-    return True
   
   def check_master_config_reachability(self, q_master, T_master, T_obj):
     """
@@ -1324,7 +1262,8 @@ class CCPlanner(object):
 
     return True, slave_wpts, timestamps
 
-  def _nearest_neighbor_indices(self, master_config_rand, treetype):
+  def _nearest_neighbor_indices(self, config_rand, treetype, 
+                                config_type=ROBOT):
     """
     Return indices of C{self.nn} vertices nearest to the given C{SE3_config}
     in the tree specified by C{treetype}.
@@ -1342,14 +1281,15 @@ class CCPlanner(object):
       tree = self._query.tree_start
     else:
       tree = self._query.tree_end
+    nv = len(tree)
+      
+    if config_type == ROBOT:
+      distance_list = [utils.distance(config_rand.q,
+                       v.config.master_config.q) for v in tree.vertices]
+    elif config_type == OBJECT:
+      distance_list = [utils.SE3_distance(config_rand, v.config.T_obj, 
+                       1.0 / np.pi, 1.0) for v in tree.vertices]
 
-    nv = 0
-    for v in tree.vertices:
-      if v.is_node:
-        nv += 1
-
-    distance_list = [utils.distance(master_config_rand.q,
-                     v.config.master_config.q) for v in tree.vertices]
     distance_heap = heap.Heap(distance_list)
         
     if (self._query.nn == -1):
@@ -1357,14 +1297,7 @@ class CCPlanner(object):
       nn = nv
     else:
       nn = min(self._query.nn, nv)
-
-    i = 0
-    nnindices = []
-    while i < nn:
-      vertex_index = distance_heap.ExtractMin()[0]
-      if tree[vertex_index].is_node:
-        i += 1
-        nnindices.append(vertex_index)
+    nnindices = [distance_heap.ExtractMin()[0] for i in range(nn)]
     return nnindices
 
   def visualize_cctraj(self, cctraj, speed=1.0):

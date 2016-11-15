@@ -3,17 +3,18 @@ import pickle
 import numpy as np
 import openravepy as orpy
 import ikea_openrave.utils as rave_utils
+from time import time
 from IPython import embed
 
-import sys
-sys.path.append('../src/')
+import os.path as path
+model_path = path.abspath(path.join(path.dirname(__file__), "../xml"))
 
 if __name__ == "__main__":
   # Generic configuration
   np.set_printoptions(precision=10, suppress=True)
   
   # Load OpenRAVE environment
-  scene_file = '../xml/worlds/bimanual_setup.env.xml'
+  scene_file = model_path + '/worlds/bimanual_setup.env.xml'
   env = orpy.Environment()
   env.SetViewer('qtcoin')
   env.Load(scene_file)
@@ -21,7 +22,7 @@ if __name__ == "__main__":
   # Retrive robot and objects
   left_robot = env.GetRobot('denso_left')
   right_robot = env.GetRobot('denso_right')
-  cage = env.ReadKinBodyXMLFile('../xml/objects/cage.kinbody.xml')
+  cage = env.ReadKinBodyXMLFile(model_path + '/objects/cage.kinbody.xml')
   env.Add(cage)
 
   velocity_scale = 0.5
@@ -52,28 +53,40 @@ if __name__ == "__main__":
   embed()
   exit(0)
 
+  rep_time = 20
+
   ################ Different planner variations #################
-  import cc_planner as ccp
+  import bimanual.planners.cc_planner as ccp
+  ccplanner = ccp.CCPlanner(cage, [left_robot, right_robot], debug=False)
+  t = time()
+  for i in xrange(rep_time):
+    ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, 
+                          q_robots_goal, q_robots_grasp, T_obj_start, nn=2,
+                          step_size=0.5, velocity_scale=velocity_scale,
+                          enable_bw=True)
+    ccplanner.set_query(ccquery)
+    res = ccplanner.solve(timeout=20)
+  print (time()-t)/rep_time
+
+
+  import bimanual.planners.cc_planner as ccp
   ccplanner = ccp.CCPlanner(cage, [left_robot, right_robot], debug=False)
   ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, q_robots_goal,
                         q_robots_grasp, T_obj_start, nn=2, step_size=0.5,
-                        predict=False, velocity_scale=velocity_scale, 
-                        enable_bw=True)
+                        velocity_scale=velocity_scale, enable_bw=True)
+  ccplanner.set_query(ccquery)
+  res = ccplanner.solve(timeout=20)
+
+  import bimanual.planners.cc_planner_connect as ccp
+  ccplanner = ccp.CCPlanner(cage, [left_robot, right_robot], debug=False)
+  ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, q_robots_goal,
+                        q_robots_grasp, T_obj_start, nn=2, step_size=0.5,
+                        velocity_scale=velocity_scale, enable_bw=True)
   ccplanner.set_query(ccquery)
   res = ccplanner.solve(timeout=20)
 
 
-  import cc_planner_connect as ccp
-  ccplanner = ccp.CCPlanner(cage, [left_robot, right_robot], debug=False)
-  ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, q_robots_goal,
-                        q_robots_grasp, T_obj_start, nn=2, step_size=0.5,
-                        predict=False, velocity_scale=velocity_scale, 
-                        enable_bw=True)
-  ccplanner.set_query(ccquery)
-  res = ccplanner.solve(timeout=20)
-
-
-  import cc_planner_ms as ccp
+  import bimanual.planners.cc_planner_ms as ccp
   ccplanner = ccp.CCPlanner(cage, left_robot, right_robot, debug=False)
   ccquery = ccp.CCQuery(q_robots_start[0], q_robots_start[1], 
                         q_robots_goal[0], q_robots_goal[1],
@@ -86,7 +99,7 @@ if __name__ == "__main__":
 
 
 
-  import cc_planner_ms_connect as ccp
+  import bimanual.planners.cc_planner_ms_connect as ccp
   ccplanner = ccp.CCPlanner(cage, left_robot, right_robot, debug=False)
   ccquery = ccp.CCQuery(q_robots_start[0], q_robots_start[1], 
                         q_robots_goal[0], q_robots_goal[1],

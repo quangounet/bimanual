@@ -4,18 +4,18 @@ import numpy as np
 import openravepy as orpy
 import ikea_openrave.utils as rave_utils
 from time import time
+from bimanual.utils import utils
 from IPython import embed
 
-import sys
-sys.path.append('../src/')
-from utils import utils
+import os.path as path
+model_path = path.abspath(path.join(path.dirname(__file__), "../xml"))
 
 class Comparison(object):
   def __init__(self):
     np.set_printoptions(precision=10, suppress=True)
 
     # Load OpenRAVE environment
-    scene_file = '../xml/worlds/bimanual_setup.env.xml'
+    scene_file = model_path + '/worlds/bimanual_setup.env.xml'
     env = orpy.Environment()
     env.SetViewer('qtcoin')
     env.Load(scene_file)
@@ -23,7 +23,7 @@ class Comparison(object):
     # Retrive robot and objects
     left_robot = env.GetRobot('denso_left')
     right_robot = env.GetRobot('denso_right')
-    stick = env.ReadKinBodyXMLFile('../xml/objects/ikea_stick.kinbody.xml')
+    stick = env.ReadKinBodyXMLFile(model_path + '/objects/ikea_stick.kinbody.xml')
     # Correct robots transformation
     T_left_robot = np.array([[ 1.   ,  0.   ,  0.   ,  0    ],
                             [ 0.   ,  1.   ,  0.   , -0.536],
@@ -100,9 +100,8 @@ class Comparison(object):
     right_taskmanip.CloseFingers()
 
     ################## closed chain planning ###################
-    embed()
-    exit(0)
-
+    
+    rep_time = 20
     obj_translation_limits =  [[0.8, 0.8, 0.8], [-0.3, -0.3, -0.3]]
     q_robots_start = [left_robot.GetActiveDOFValues(),
                       right_robot.GetActiveDOFValues()]
@@ -119,23 +118,34 @@ class Comparison(object):
                       [left_robot, right_robot], stick, q_robots_start,
                        q_robots_grasp, T_obj_start, T_obj_goal)
 
-    from cc_planner_connect import CCPlanner, CCQuery
-    ccplanner = CCPlanner(stick, [left_robot, right_robot], debug=False)
-    ccquery = CCQuery(obj_translation_limits, q_robots_start, 
-      q_robots_goal, q_robots_grasp, T_obj_start, nn=2,
-      step_size=0.2, enable_bw=False)
-    ccplanner.set_query(ccquery)
-    res = ccplanner.solve(timeout=20)
+    embed()
+    exit(0)
 
-    from cc_planner_ms_connect import CCPlanner, CCQuery
+    rep_time = 20
+
+    from bimanual.planners.cc_planner_connect import CCPlanner, CCQuery
+    ccplanner = CCPlanner(stick, [left_robot, right_robot], debug=False)
+    t = time()
+    for i in xrange(rep_time):
+      ccquery = CCQuery(obj_translation_limits, q_robots_start, 
+        q_robots_goal, q_robots_grasp, T_obj_start, nn=2,
+        step_size=0.2, enable_bw=False)
+      ccplanner.set_query(ccquery)
+      res = ccplanner.solve(timeout=20)
+    print (time()-t)/rep_time
+
+    from bimanual.planners.cc_planner_ms_connect import CCPlanner, CCQuery
     ccplanner = CCPlanner(stick, left_robot, right_robot, debug=False)
-    ccquery = CCQuery(q_robots_start[0], q_robots_start[1], 
-                        q_robots_goal[0], q_robots_goal[1],
-                        q_robots_grasp[0], q_robots_grasp[1], 
-                        T_obj_start, obj_translation_limits,
-                        nn=2, step_size=0.2, enable_bw=False)
-    ccplanner.set_query(ccquery)
-    res = ccplanner.solve(timeout=20)
+    t = time()
+    for i in xrange(rep_time):
+      ccquery = CCQuery(q_robots_start[0], q_robots_start[1], 
+                          q_robots_goal[0], q_robots_goal[1],
+                          q_robots_grasp[0], q_robots_grasp[1], 
+                          T_obj_start, obj_translation_limits,
+                          nn=2, step_size=0.2, enable_bw=False)
+      ccplanner.set_query(ccquery)
+      res = ccplanner.solve(timeout=20)
+    print (time()-t)/rep_time
 
     ccplanner.visualize_cctraj(ccquery.cctraj)
 

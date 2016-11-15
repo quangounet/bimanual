@@ -8,7 +8,9 @@ from pylab import *
 from TOPP import Trajectory
 from TOPP import Utilities
 from time import sleep
+from copy import deepcopy
 
+import TOPP
 import string
 import numpy as np
 import lie
@@ -523,13 +525,9 @@ def compute_accumulated_SE3_distance(lie_traj, translation_traj, t0=None, t1=Non
     t0 = 0    
   if t1 is None: 
     t1 = lie_traj.duration
-  _epsilon = 1e-8
-  if (t0 < -_epsilon):
-    raise Exception('Incorrect time stamp (t0 < 0).')
-  if (t0 > t1 + _epsilon):
-    raise Exception('Incorrect time stamp (t1 < t0).')
-  if (t1 > lie_traj.duration + _epsilon):
-    raise Exception('Incorrect time stamp (t1 > lie_traj.duration)')
+  eps = discr_timestep * 0.2
+  if not (0 - eps) <= t0 < t1 <= (lie_traj.duration + eps):
+      raise Exception('Incorrect time stamp.')
 
   accumulated_dist = 0
   timestamps = np.append(np.arange(t0 + discr_timestep, 
@@ -659,23 +657,43 @@ def merge_wpts_list(wpts_list, eps=1e-3):
   @rtype:  list
   @return: A list of merged waypoints.
   """
-  new_wpts = None
+  new_wpts = []
   for W in wpts_list:
-    if new_wpts is None:
-      new_wpts = []
-    else:
+    if not new_wpts == []:
       # Check soundness
-      try:
-        assert(distance(W[0][0:6], new_wpts[-1][0:6]) < eps)
-      except:
-        print 'W', W[0]
-        print 'new', new_wpts[-1]
-        assert(False)
+      if distance(W[0], new_wpts[-1]) > eps:
+        raise Exception('Waypoints not match')
       W.pop(0)
 
     new_wpts = new_wpts + W
     
   return new_wpts
+
+
+def merge_bimanual_trajs_wpts_list(bimanual_trajs, eps=1e-3):
+  """
+  Merge lists of bimanual waypoints in the given bimanual trajectories, which
+  may contain regrasp actions stored in dict.
+  """
+  new_bimanual_trajs = []
+  traj_num = len(bimanual_trajs)
+  before_regrasp = True
+  i = 0
+  while i < traj_num:
+    while type(bimanual_trajs[i]) is not list:
+      new_bimanual_trajs.append(bimanual_trajs[i])
+      before_regrasp = False
+      i += 1
+
+    bimanual_wpts_list = [[], []]
+    while (i < traj_num) and (type(bimanual_trajs[i]) is list):
+      bimanual_wpts_list[0].append(bimanual_trajs[i][0])
+      bimanual_wpts_list[1].append(bimanual_trajs[i][1])
+      i += 1
+
+    new_bimanual_trajs.append([merge_wpts_list(bimanual_wpts_list[0]),
+                               merge_wpts_list(bimanual_wpts_list[1])])
+  return new_bimanual_trajs
 
 def discretize_wpts(q_init, q_final, step_count):
   """
@@ -699,6 +717,47 @@ def discretize_wpts(q_init, q_final, step_count):
   for i in xrange(step_count):
     wpts.append(q_init + q_delta*(i+1))
   return wpts
+
+def arange(start, end, step):
+  """
+  An discretization function almost same as np.arange() when difference
+  between C{start} and C{end} is multiple of C{step}, but fixing possible
+  error caused by float rounding so that C{end} is always excluded.
+  """
+  array = np.arange(start, end, step)
+  if np.isclose(array[-1], end):
+    array = array[:-1]
+  return array
+
+def reverse_traj(trajectroy):
+  newchunkslist = []
+  for chunk in trajectroy.chunkslist:
+    T = chunk.duration
+    newpoly_list = []
+    for p in chunk.polynomialsvector:
+      # Perform variable changing of p(x) = a_n(x)^n + a_(n-1)(x)^(n-1) + ...
+      # by x = T - y
+        
+      a = p.q # coefficient vector with python convention (highest degree first)
+      # a is a poly1d object
+      r = a.r
+      newr = [T - k for k in r]
+            
+      b = np.poly1d(newr, True) # reconstruct a new polynomial from roots
+      b = b*a.coeffs[0] # multiply back by a_n
+      # *** this multiplication does not commute
+            
+      if (b(0)*a(T) < 0):
+        # correct the coeffs if somehow the polynomial is flipped
+        b = b*-1.0
+
+      # TOPP convention is weak-term-first
+      newpoly = Trajectory.Polynomial(b.coeffs.tolist()[::-1])
+      newpoly_list.append(newpoly)
+    newchunk = Trajectory.Chunk(chunk.duration, newpoly_list)
+    newchunkslist.insert(0, newchunk)
+  
+  return Trajectory.PiecewisePolynomialTrajectory(newchunkslist)
 
 ########################### Manipulator related ###########################
 def compute_endeffector_transform(manip, q):
@@ -798,7 +857,7 @@ def visualize_config_transition(robot, q_start, q_goal, step_num=50,
   q_start = np.array(q_start)
   q_goal = np.array(q_goal)
   delta = (q_goal - q_start)/step_num
-  for i in xrange(step_num):
+  for i in xrange(step_num+1):
     robot.SetActiveDOFValues(q_start + delta * i)
     sleep(timestep)
 

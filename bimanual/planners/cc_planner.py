@@ -1,6 +1,6 @@
 """
 Closed-chain motion planner for bimual setup.
-Modified from cc_planner.py to use RRT-connect.
+This one plans object trajectory in SE(3) first.
 """
 
 import openravepy as orpy
@@ -9,8 +9,8 @@ import random
 from time import time, sleep
 import traceback
 import TOPP
-from utils.utils import colorize
-from utils import utils, heap, lie
+from bimanual.utils.utils import colorize
+from bimanual.utils import utils, heap, lie
 from IPython import embed
 
 # Global parameters
@@ -45,17 +45,18 @@ class SE3Config(object):
     @param pd: Time derivative of p (translational velocity.
     """
     quat_length = np.linalg.norm(q)
+    assert(quat_length > 0)
     self.q = q / quat_length
     if qd is None:
       self.qd = np.zeros(3)
     else:
-      self.qd = qd
+      self.qd = np.array(qd)
 
     self.p = p
     if pd is None:
       self.pd = np.zeros(3)
     else:
-      self.pd = pd
+      self.pd = np.array(pd)
 
     self.T = orpy.matrixFromPose(np.hstack([self.q, self.p]))
 
@@ -120,7 +121,7 @@ class CCConfig(object):
     @type  SE3_config: SE3Config
     @param SE3_config: Configuration of the manipulated object.
     """
-    self.q_robots   = q_robots
+    self.q_robots   = np.array(q_robots)
     self.SE3_config = SE3_config
 
 
@@ -137,7 +138,7 @@ class CCVertex(object):
     @type  config: CCConfig
     @param config: Configuration of the bimanual set-up in this vertex.
     """
-    self.config  = config
+    self.config = config
 
     # These parameters are to be assigned when the vertex is added to the tree
     self.index            = 0
@@ -147,7 +148,6 @@ class CCVertex(object):
     self.bimanual_wpts    = []
     self.timestamps       = []
     self.level            = 0
-    self.is_node          = True
 
 
 class CCTree(object):  
@@ -155,7 +155,7 @@ class CCTree(object):
   An RRT tree class for planning closed-chain motion.
   """
 
-  def __init__(self, v_root=None, treetype=FW):
+  def __init__(self, v_root, treetype=FW):
     """
     CCTree constructor.
 
@@ -166,11 +166,8 @@ class CCTree(object):
                      It can be either forward(C{FW}) or backward(C{BW}).
     """
     self.vertices = []
-    self.length = 0
-    if v_root is not None:
-      self.vertices.append(v_root)
-      self.length += 1
-
+    self.vertices.append(v_root)
+    self.length = 1
     self.treetype = treetype
 
   def __len__(self):
@@ -179,7 +176,7 @@ class CCTree(object):
   def __getitem__(self, index):
     return self.vertices[index]        
   
-  def add_vertex(self, v_new, parent_index, rot_traj, translation_traj, bimanual_wpts, timestamps, is_node=True):
+  def add_vertex(self, v_new, parent_index, rot_traj, translation_traj, bimanual_wpts, timestamps):
     """
     Add a C{CCVertex} to the tree.
 
@@ -208,11 +205,11 @@ class CCTree(object):
     v_new.timestamps       = timestamps
     v_new.index            = self.length
     v_new.level            = self.vertices[parent_index].level + 1
-    v_new.is_node          = is_node
     
     self.vertices.append(v_new)
     self.length += 1
     
+
   def generate_rot_traj_list(self, end_index=-1):
     """
     Return all C{rot_traj} of vertices 
@@ -359,8 +356,8 @@ class CCQuery(object):
   def __init__(self, obj_translation_limits, q_robots_start, q_robots_goal, 
                q_robots_grasp, T_obj_start, T_obj_goal=None, nn=-1, 
                step_size=0.7, velocity_scale=1, interpolation_duration=None, 
-               predict=False, predict_multi=10.0, discr_timestep=5e-3, 
-               discr_check_timestep=None, enable_bw=False):
+               discr_timestep=5e-3, discr_check_timestep=None,
+               enable_bw=False):
     """
     CCQuery constructor. It is independent of robots to be planned since robot
     info will be stored in planner itself.
@@ -377,8 +374,7 @@ class CCQuery(object):
     are scaled accordingly to satisfy the abovementioned criteria.
 
     @type  obj_translation_limits: list
-    @param obj_translation_limits: Translational limit for planning the 
-                                   object's motion.
+    @param obj_translation_limits: Cartesian workspace limits of the object
     @type          q_robots_start: list
     @param         q_robots_start: Start configurations of the two robots.
     @type           q_robots_goal: list
@@ -398,7 +394,7 @@ class CCQuery(object):
                                    connection with the new one in extension
                                    and connection.
     @type               step_size: float
-    @param              step_size: Size of each step for tree extension
+    @param              step_size: Size of each step for tree extension, >=0.1
     @type          velocity_scale: float
     @param         velocity_scale: Ratio of the robots' velocity limit to 
                                    their full velocity.
@@ -406,9 +402,6 @@ class CCQuery(object):
     @param interpolation_duration: Length of time used for interpolating 
                                    trajectory connecting vertices. This needs 
                                    to be multiple of C{discr_check_timestep}
-    @type                 predict: bool
-    @param                predict: B{True} if predication in C{plan} is to be 
-                                   used.
     @type          discr_timestep: float
     @param         discr_timestep: Timestep between adjacent waypoints.
     @type    discr_check_timestep: float
@@ -442,12 +435,10 @@ class CCQuery(object):
     self.discr_timestep         = discr_timestep
     self.discr_check_timestep   = discr_check_timestep
     self.enable_bw              = enable_bw
-    self.predict                = predict
-    self.predict_multi          = predict_multi
 
     if step_size < 0.1:
       raise CCPlannerException('step_size should not be less than 0.1')
-
+      
     if self.discr_check_timestep is None:
       self.discr_check_timestep   = 0.03 / velocity_scale
       self.discr_check_timestep = int(self.discr_check_timestep 
@@ -520,8 +511,7 @@ class CCQuery(object):
     self.translation_traj_list += self.tree_end.generate_translation_traj_list()
 
     # Convert translation_traj_list to translation_traj
-    self.translation_traj = TrajectoryFromStr(
-      utils.traj_str_from_traj_list(self.translation_traj_list))
+    self.translation_traj = TrajectoryFromStr(utils.traj_str_from_traj_list(self.translation_traj_list))
 
   def generate_final_bimanual_wpts(self):
     """
@@ -628,8 +618,8 @@ class CCPlanner(object):
     """ 
     q_rand = lie.RandomQuat()
     p_rand = np.asarray([_RNG.uniform(self._query.lower_limits[i], 
-                     self._query.upper_limits[i]) 
-               for i in xrange(3)])
+                                      self._query.upper_limits[i]) 
+                        for i in xrange(3)])
     
     qd_rand = np.zeros(3)
     pd_rand = np.zeros(3)
@@ -643,27 +633,28 @@ class CCPlanner(object):
     C{self.bimanual_T_rel} to store relative pose of the robots' end-effectors
     w.r.t. to the object.
     """
+    query = self._query
     # Compute relative transformation from end-effectors to object
     self.bimanual_T_rel = []
     for i in xrange(2):
-      self.bimanual_T_rel.append(np.dot(np.linalg.inv(self._query.v_start.config.SE3_config.T), utils.compute_endeffector_transform(self.manips[i], self._query.v_start.config.q_robots[i])))
+      self.bimanual_T_rel.append(np.dot(np.linalg.inv(query.v_start.config.SE3_config.T), utils.compute_endeffector_transform(self.manips[i], query.v_start.config.q_robots[i])))
 
     # Compute object SE3_config at goal if not specified
-    if self._query.v_goal.config.SE3_config is None:
-      T_left_robot_goal = utils.compute_endeffector_transform(self.manips[0], self._query.v_goal.config.q_robots[0])
+    if query.v_goal.config.SE3_config is None:
+      T_left_robot_goal = utils.compute_endeffector_transform(self.manips[0], query.v_goal.config.q_robots[0])
       T_obj_goal = np.dot(T_left_robot_goal, np.linalg.inv(self.bimanual_T_rel[0]))
-      self._query.v_goal.config.SE3_config = SE3Config.from_matrix(T_obj_goal)
+      query.v_goal.config.SE3_config = SE3Config.from_matrix(T_obj_goal)
 
     # Check start and goal grasping pose
     bimanual_goal_rel_T = []
     for i in xrange(2):
-      bimanual_goal_rel_T.append(np.dot(np.linalg.inv(self._query.v_goal.config.SE3_config.T), utils.compute_endeffector_transform(self.manips[i], self._query.v_goal.config.q_robots[i])))
+      bimanual_goal_rel_T.append(np.dot(np.linalg.inv(query.v_goal.config.SE3_config.T), utils.compute_endeffector_transform(self.manips[i], query.v_goal.config.q_robots[i])))
 
     if not np.isclose(self.bimanual_T_rel, bimanual_goal_rel_T, atol=1e-3).all():
       raise CCPlannerException('Start and goal grasping pose not matching.')
 
     # Complete tree_end in the query 
-    self._query.tree_end = CCTree(self._query.v_goal, BW)
+    query.tree_end = CCTree(query.v_goal, BW)
 
 
   def loose_gripper(self, query):
@@ -702,57 +693,57 @@ class CCPlanner(object):
     @rtype:  int
     @return: Whether the query is solved within given time limit.
     """
-    if self._query.solved:
+    query = self._query
+    if query.solved:
       self._output_info('This query has already been solved.', 'green')
       return True
 
-    self.loose_gripper(self._query)
+    self.loose_gripper(query)
 
     t = 0.0
-    prev_iter = self._query.iteration_count
+    prev_iter = query.iteration_count
     
     t_begin = time()
     if (self._connect() == REACHED):
-      self._query.iteration_count += 1
       t_end = time()
-      self._query.running_time += (t_end - t_begin)
+      query.running_time += (t_end - t_begin)
       
       self._output_info('Path found. Iterations: {0}. Running time: {1}s.'
-                        .format(self._query.iteration_count, 
-                        self._query.running_time), 'green')
-      self._query.solved = True
-      self._query.generate_final_cctraj()
-      self.reset_config(self._query)
+                        .format(query.iteration_count, 
+                        query.running_time), 'green')
+      query.solved = True
+      query.generate_final_cctraj()
+      self.reset_config(query)
       return True
 
     elasped_time = time() - t_begin
     t += elasped_time
-    self._query.running_time += elasped_time
+    query.running_time += elasped_time
 
     while (t < timeout):
-      self._query.iteration_count += 1
-      self._output_debug('Iteration no. {0}'.format(self._query.iteration_count), 'blue')
+      query.iteration_count += 1
+      self._output_debug('Iteration no. {0}'.format(query.iteration_count), 'blue')
       t_begin = time()
 
       SE3_config = self.sample_SE3_config()
       if (self._extend(SE3_config) != TRAPPED):
-        self._output_debug('Tree start : {0}; Tree end : {1}'.format(len(self._query.tree_start.vertices), len(self._query.tree_end.vertices)), 'green')
+        self._output_debug('Tree start : {0}; Tree end : {1}'.format(len(query.tree_start.vertices), len(query.tree_end.vertices)), 'green')
 
         if (self._connect() == REACHED):
           t_end = time()
-          self._query.running_time += (t_end - t_begin)
-          self._output_info('Path found. Iterations: {0}. Running time: {1}s.'.format(self._query.iteration_count, self._query.running_time), 'green')
-          self._query.solved = True
-          self._query.generate_final_cctraj()
-          self.reset_config(self._query)
+          query.running_time += (t_end - t_begin)
+          self._output_info('Path found. Iterations: {0}. Running time: {1}s.'.format(query.iteration_count, query.running_time), 'green')
+          query.solved = True
+          query.generate_final_cctraj()
+          self.reset_config(query)
           return True
         
       elasped_time = time() - t_begin
       t += elasped_time
-      self._query.running_time += elasped_time
+      query.running_time += elasped_time
 
-    self._output_info('Timeout {0}s reached after {1} iterations'.format(timeout, self._query.iteration_count - prev_iter), 'red')
-    self.reset_config(self._query)
+    self._output_info('Timeout {0}s reached after {1} iterations'.format(timeout, query.iteration_count - prev_iter), 'red')
+    self.reset_config(query)
     return False
 
   def reset_config(self, query):
@@ -804,16 +795,14 @@ class CCPlanner(object):
              -  B{ADVANCED}: when the tree is extended towards the given
                              config
     """
+    query = self._query
     status = TRAPPED
     nnindices = self._nearest_neighbor_indices(SE3_config, FW)
     for index in nnindices:
-      v_near = self._query.tree_start[index]
+      v_near = query.tree_start[index]
       
-      # quaternion
       q_beg  = v_near.config.SE3_config.q
       qd_beg = v_near.config.SE3_config.qd
-      
-      # translation
       p_beg  = v_near.config.SE3_config.p
       pd_beg = v_near.config.SE3_config.pd
 
@@ -824,20 +813,20 @@ class CCPlanner(object):
 
       # Check if SE3_config is too far from v_near.SE3_config
       SE3_dist = utils.SE3_distance(SE3_config.T, v_near.config.SE3_config.T, 1.0 / np.pi, 1.0)
-      if SE3_dist <= self._query.step_size:
+      if SE3_dist <= query.step_size:
         status = REACHED
         new_SE3_config = SE3_config
       else:
         if not utils._is_close_axis(q_beg, q_end):
           q_end = -q_end
-        q_end = q_beg + self._query.step_size * (q_end - q_beg) / SE3_dist
+        q_end = q_beg + query.step_size * (q_end - q_beg) / SE3_dist
         q_end /= np.sqrt(np.dot(q_end, q_end))
 
-        p_end = p_beg + self._query.step_size * (p_end - p_beg) / SE3_dist
+        p_end = p_beg + query.step_size * (p_end - p_beg) / SE3_dist
 
         new_SE3_config = SE3Config(q_end, p_end, qd_end, pd_end)
         status = ADVANCED
-      # Check collision (SE3_config) # BIGHEAD: CheckCollision
+      # Check collision (SE3_config)
       res = self.is_collision_free_SE3_config(new_SE3_config)
       if not res:
         self._output_debug('TRAPPED : SE(3) config in collision', bold=False)
@@ -846,7 +835,6 @@ class CCPlanner(object):
 
       # Check reachability (SE3_config)
       res = self.check_SE3_config_reachability(new_SE3_config)
-      # BIGHEAD: FindIKSolution
       if not res:
         self._output_debug('TRAPPED : SE(3) config not reachable', bold=False)
         status = TRAPPED
@@ -856,12 +844,12 @@ class CCPlanner(object):
       R_beg = orpy.rotationMatrixFromQuat(q_beg)
       R_end = orpy.rotationMatrixFromQuat(q_end)
       rot_traj = lie.InterpolateSO3(R_beg, R_end, qd_beg, qd_end,
-                                    self._query.interpolation_duration)
-      translation_traj_str = utils.traj_str_3rd_degree(p_beg, p_end, pd_beg, pd_end, self._query.interpolation_duration)
+                                    query.interpolation_duration)
+      translation_traj_str = utils.traj_str_3rd_degree(p_beg, p_end, pd_beg, pd_end, query.interpolation_duration)
 
       # Check translational limit
       # NB: Can skip this step, since it's not likely the traj will exceed the limits given that p_beg and p_end are within limits
-      res = utils.check_translation_traj_str_limits(self._query.upper_limits, self._query.lower_limits, translation_traj_str)
+      res = utils.check_translation_traj_str_limits(query.upper_limits, query.lower_limits, translation_traj_str)
       if not res:
         self._output_debug('TRAPPED : SE(3) trajectory exceeds translational'
                            ' limit', bold=False)
@@ -872,7 +860,6 @@ class CCPlanner(object):
 
       # Check collision (object trajectory)
       res = self.is_collision_free_SE3_traj(rot_traj, translation_traj, R_beg)
-      # BIGHEAD: EvalRotation and CheckCollision
       if not res:
         self._output_debug('TRAPPED : SE(3) trajectory in collision', 
                            bold=False)
@@ -883,7 +870,6 @@ class CCPlanner(object):
       passed, bimanual_wpts, timestamps = self.check_SE3_traj_reachability(
         lie.LieTraj([R_beg, R_end], [rot_traj]), translation_traj,
         v_near.config.q_robots)
-      #BIGHEAD ComputIK and CheckCollision
       if not passed:
         self._output_debug('TRAPPED : SE(3) trajectory not reachable', 
                            bold=False)
@@ -896,50 +882,9 @@ class CCPlanner(object):
       new_q_robots = [wpts[-1] for wpts in bimanual_wpts] 
       new_config = CCConfig(new_q_robots, new_SE3_config)
       v_new = CCVertex(new_config)
-      self._query.tree_start.add_vertex(v_new, v_near.index, rot_traj, translation_traj, bimanual_wpts, timestamps)
+      query.tree_start.add_vertex(v_new, v_near.index, rot_traj, translation_traj, bimanual_wpts, timestamps)
       return status
     return status
-      
-  def test(self):
-    self.loose_gripper(self._query)
-    count = 0
-    t = time()
-    for i in xrange(10000):
-      SE3_config = self.sample_SE3_config()
-      v_near = self._query.tree_start[0]
-      
-      # quaternion
-      q_beg  = v_near.config.SE3_config.q
-      qd_beg = v_near.config.SE3_config.qd
-      
-      # translation
-      p_beg  = v_near.config.SE3_config.p
-      pd_beg = v_near.config.SE3_config.pd
-
-      q_end = SE3_config.q
-      p_end = SE3_config.p
-      qd_end = SE3_config.qd
-      pd_end = SE3_config.pd
-
-      # Check if SE3_config is too far from v_near.SE3_config
-      SE3_dist = utils.SE3_distance(SE3_config.T, v_near.config.SE3_config.T, 1.0 / np.pi, 1.0)
-      if SE3_dist <= self._query.step_size:
-        new_SE3_config = SE3_config
-      else:
-        if not utils._is_close_axis(q_beg, q_end):
-          q_end = -q_end
-        q_end = q_beg + self._query.step_size * (q_end - q_beg) / SE3_dist
-        q_end /= np.sqrt(np.dot(q_end, q_end))
-
-        p_end = p_beg + self._query.step_size * (p_end - p_beg) / SE3_dist
-
-        new_SE3_config = SE3Config(q_end, p_end, qd_end, pd_end)
-      # Check collision (SE3_config) # BIGHEAD: CheckCollision
-      if not self.is_collision_free_SE3_config(new_SE3_config):
-        count += 1
-    self.reset_config(self._query)
-    print time()-t
-    print count/10000.0
 
   def _extend_bw(self, SE3_config):
     """
@@ -955,10 +900,11 @@ class CCPlanner(object):
              -  B{ADVANCED}: when the tree is extended towards the given
                              config
     """
+    query = self._query
     status = TRAPPED
     nnindices = self._nearest_neighbor_indices(SE3_config, BW)
     for index in nnindices:
-      v_near = self._query.tree_end[index]
+      v_near = query.tree_end[index]
       
       # quaternion
       q_end  = v_near.config.SE3_config.q
@@ -975,21 +921,21 @@ class CCPlanner(object):
 
       # Check if SE3_config is too far from v_near.SE3_config
       SE3_dist = utils.SE3_distance(SE3_config.T, v_near.config.SE3_config.T, 1.0 / np.pi, 1.0)
-      if SE3_dist <= self._query.step_size:
+      if SE3_dist <= query.step_size:
         status = REACHED
         new_SE3_config = SE3_config
       else:
         if not utils._is_close_axis(q_beg, q_end):
           q_beg = -q_beg
-        q_beg = q_end + self._query.step_size * (q_beg - q_end) / SE3_dist
+        q_beg = q_end + query.step_size * (q_beg - q_end) / SE3_dist
         q_beg /= np.sqrt(np.dot(q_beg, q_beg))
 
-        p_beg = p_end + self._query.step_size * (p_beg - p_end) / SE3_dist
+        p_beg = p_end + query.step_size * (p_beg - p_end) / SE3_dist
 
         new_SE3_config = SE3Config(q_beg, p_beg, qd_beg, pd_beg)
         status = ADVANCED
 
-      # Check collision (SE3_config) # BIGHEAD: CheckCollision
+      # Check collision (SE3_config)
       res = self.is_collision_free_SE3_config(new_SE3_config)
       if not res:
         self._output_debug('TRAPPED : SE(3) config in collision', bold=False)
@@ -998,7 +944,6 @@ class CCPlanner(object):
 
       # Check reachability (SE3_config)
       res = self.check_SE3_config_reachability(new_SE3_config)
-      # BIGHEAD: FindIKSolution
       if not res:
         self._output_debug('TRAPPED : SE(3) config not reachable', bold=False)
         status = TRAPPED
@@ -1008,12 +953,12 @@ class CCPlanner(object):
       R_beg = orpy.rotationMatrixFromQuat(q_beg)
       R_end = orpy.rotationMatrixFromQuat(q_end)
       rot_traj = lie.InterpolateSO3(R_beg, R_end, qd_beg, qd_end,
-                                    self._query.interpolation_duration)
-      translation_traj_str = utils.traj_str_3rd_degree(p_beg, p_end, pd_beg, pd_end, self._query.interpolation_duration)
+                                    query.interpolation_duration)
+      translation_traj_str = utils.traj_str_3rd_degree(p_beg, p_end, pd_beg, pd_end, query.interpolation_duration)
 
       # Check translational limit
       # NB: Can skip this step, since it's not likely the traj will exceed the limits given that p_beg and p_end are within limits
-      res = utils.check_translation_traj_str_limits(self._query.upper_limits, self._query.lower_limits, translation_traj_str)
+      res = utils.check_translation_traj_str_limits(query.upper_limits, query.lower_limits, translation_traj_str)
       if not res:
         self._output_debug('TRAPPED : SE(3) trajectory exceeds translational limit', bold=False)
         status = TRAPPED
@@ -1023,7 +968,6 @@ class CCPlanner(object):
 
       # Check collision (object trajectory)
       res = self.is_collision_free_SE3_traj(rot_traj, translation_traj, R_beg)
-      # BIGHEAD: EvalRotation and CheckCollision
       if not res:
         self._output_debug('TRAPPED : SE(3) trajectory in collision', 
                            bold=False)
@@ -1034,7 +978,6 @@ class CCPlanner(object):
       passed, bimanual_wpts, timestamps = self.check_SE3_traj_reachability(
         lie.LieTraj([R_beg, R_end], [rot_traj]), translation_traj,
         v_near.config.q_robots, direction=BW)
-      #BIGHEAD ComputIK and CheckCollision
       if not passed:
         self._output_debug('TRAPPED : SE(3) trajectory not reachable', 
                            bold=False)
@@ -1047,7 +990,7 @@ class CCPlanner(object):
       new_q_robots = [wpts[0] for wpts in bimanual_wpts] 
       new_config = CCConfig(new_q_robots, new_SE3_config)
       v_new = CCVertex(new_config)
-      self._query.tree_end.add_vertex(v_new, v_near.index, rot_traj, translation_traj, bimanual_wpts, timestamps)
+      query.tree_end.add_vertex(v_new, v_near.index, rot_traj, translation_traj, bimanual_wpts, timestamps)
       return status
     return status
 
@@ -1078,173 +1021,76 @@ class CCPlanner(object):
              -  B{TRAPPED}: connection successful
              -  B{REACHED}: connection failed
     """
-    v_test = self._query.tree_start.vertices[-1]
+    query = self._query
+
+    v_test = query.tree_start.vertices[-1]
     nnindices = self._nearest_neighbor_indices(v_test.config.SE3_config, BW)
+    status = TRAPPED
     for index in nnindices:
-      v_near = self._query.tree_end[index]
-      while True:
-        # quaternion
-        q_beg  = v_test.config.SE3_config.q
-        qd_beg = v_test.config.SE3_config.qd
-        q_end  = v_near.config.SE3_config.q
-        qd_end = v_near.config.SE3_config.qd
-        
-        # translation
-        p_beg  = v_test.config.SE3_config.p
-        pd_beg = v_test.config.SE3_config.pd
-        p_end  = v_near.config.SE3_config.p
-        pd_end = v_near.config.SE3_config.pd
+      v_near = query.tree_end[index]
 
-        # Check distance
-        SE3_dist = utils.SE3_distance(v_test.config.SE3_config.T, 
-                                      v_near.config.SE3_config.T, 
-                                      1.0 / np.pi, 1.0)
-        if SE3_dist <= self._query.step_size: # connect directly
-          status = REACHED
+      # quaternion
+      q_beg  = v_test.config.SE3_config.q
+      qd_beg = v_test.config.SE3_config.qd
+      
+      q_end  = v_near.config.SE3_config.q
+      qd_end = v_near.config.SE3_config.qd
+      
+      # translation
+      p_beg  = v_test.config.SE3_config.p
+      pd_beg = v_test.config.SE3_config.pd
 
-          # Interpolate the object trajectory
-          R_beg = orpy.rotationMatrixFromQuat(q_beg)
-          R_end = orpy.rotationMatrixFromQuat(q_end)
-          rot_traj = lie.InterpolateSO3(R_beg, R_end, qd_beg, qd_end, 
-                                        self._query.interpolation_duration)
-          translation_traj_str = utils.traj_str_3rd_degree(
-            p_beg, p_end, pd_beg, pd_end, self._query.interpolation_duration)
+      p_end  = v_near.config.SE3_config.p
+      pd_end = v_near.config.SE3_config.pd
+      
+      # Interpolate the object trajectory
+      R_beg = orpy.rotationMatrixFromQuat(q_beg)
+      R_end = orpy.rotationMatrixFromQuat(q_end)
+      rot_traj = lie.InterpolateSO3(R_beg, R_end, qd_beg, qd_end, 
+                                    query.interpolation_duration)
+      translation_traj_str = utils.traj_str_3rd_degree(p_beg, p_end, pd_beg, pd_end, query.interpolation_duration)
 
-          # Check translational limit
-          # NB: Can skip this step, since it's not likely the traj will 
-          # exceed the limits given that p_beg and p_end are within limits
-          if not utils.check_translation_traj_str_limits(
-            self._query.upper_limits, self._query.lower_limits, 
-            translation_traj_str):
-            self._output_debug('TRAPPED : SE(3) trajectory exceeds '
-                               'translational limit', bold=False)
-            status = TRAPPED
-            break
+      # Check translational limit
+      # NB: Can skip this step, since it's not likely the traj will exceed the limits given that p_beg and p_end are within limits
+      if not utils.check_translation_traj_str_limits(query.upper_limits, query.lower_limits, translation_traj_str):
+        self._output_debug('TRAPPED : SE(3) trajectory exceeds translational limit', bold=False)
+        continue
 
-          translation_traj = TrajectoryFromStr(translation_traj_str)
+      translation_traj = TrajectoryFromStr(translation_traj_str)
 
-          # Check collision (object trajectory)
-          if not self.is_collision_free_SE3_traj(
-            rot_traj, translation_traj, R_beg):
-            self._output_debug('TRAPPED : SE(3) trajectory in collision', 
-                               bold=False)
-            status = TRAPPED
-            break
-          
-          # Check reachability (object trajectory)
-          passed, bimanual_wpts, timestamps = \
-            self.check_SE3_traj_reachability(
-              lie.LieTraj([R_beg, R_end], [rot_traj]), translation_traj, 
-              v_near.config.q_robots, direction=BW)
-          if not passed:
-            self._output_debug('TRAPPED : SE(3) trajectory not reachable', 
-                               bold=False)
-            status = TRAPPED
-            break
+      # Check collision (object trajectory)
+      if not self.is_collision_free_SE3_traj(rot_traj, translation_traj, R_beg):
+        self._output_debug('TRAPPED : SE(3) trajectory in collision', bold=False)
+        continue
+      
+      # Check reachability (object trajectory)
+      passed, bimanual_wpts, timestamps = \
+        self.check_SE3_traj_reachability(
+        lie.LieTraj([R_beg, R_end], [rot_traj]), translation_traj,
+        v_near.config.q_robots, direction=BW)
+      if not passed:
+        self._output_debug('TRAPPED : SE(3) trajectory not reachable', bold=False)
+        continue
 
-          # Check similarity of terminal IK solutions
-          eps = 1e-3
-          for i in xrange(2):
-            if not utils.distance(v_test.config.q_robots[i], 
-                      bimanual_wpts[i][0]) < eps:
-              passed = False
-              break
-          if not passed:
-            self._output_debug('TRAPPED : IK solution discrepancy (robot {0})'
-                               .format(i), bold=False)
-            status = TRAPPED
-            break
+      # Check similarity of terminal IK solutions
+      eps = 1e-3
+      for i in xrange(2):
+        if not utils.distance(v_test.config.q_robots[i], 
+                  bimanual_wpts[i][0]) < eps:
+          passed = False
+          break
+      if not passed:
+        self._output_debug('TRAPPED : IK solution discrepancy (robot {0})'.format(i), bold=False)
+        continue
 
-          # Now the connection is successful
-          self._query.tree_end.vertices.append(v_near)
-          self._query.connecting_rot_traj         = rot_traj
-          self._query.connecting_translation_traj = translation_traj
-          self._query.connecting_bimanual_wpts    = bimanual_wpts
-          self._query.connecting_timestamps       = timestamps
-
-          v_near.is_node = True
-          return status
-
-        else: # extend towards target
-          status = ADVANCED
-
-          if not utils._is_close_axis(q_beg, q_end):
-            q_beg = -q_beg
-          q_beg = q_end + self._query.step_size * (q_beg - q_end) / SE3_dist
-          q_beg /= np.sqrt(np.dot(q_beg, q_beg))
-
-          p_beg = p_end + self._query.step_size * (p_beg - p_end) / SE3_dist
-
-          new_SE3_config = SE3Config(q_beg, p_beg, qd_beg, pd_beg)
-
-          # Check new config collision
-          if not self.is_collision_free_SE3_config(new_SE3_config):
-            self._output_debug('TRAPPED : SE(3) config in collision', 
-                               bold=False)
-            status = TRAPPED
-            break
-
-          # Check reachability
-          if not self.check_SE3_config_reachability(new_SE3_config):
-            self._output_debug('TRAPPED : SE(3) config not reachable', 
-                               bold=False)
-            status = TRAPPED
-            break
-
-          # Interpolate the object trajectory
-          R_beg = orpy.rotationMatrixFromQuat(q_beg)
-          R_end = orpy.rotationMatrixFromQuat(q_end)
-          rot_traj = lie.InterpolateSO3(R_beg, R_end, qd_beg, qd_end, 
-                                        self._query.interpolation_duration)
-          translation_traj_str = utils.traj_str_3rd_degree(
-            p_beg, p_end, pd_beg, pd_end, self._query.interpolation_duration)
-
-          # Check translational limit
-          # NB: Can skip this step, since it's not likely the traj will 
-          # exceed the limits given that p_beg and p_end are within limits
-          if not utils.check_translation_traj_str_limits(
-            self._query.upper_limits, self._query.lower_limits, 
-            translation_traj_str):
-            self._output_debug('TRAPPED : SE(3) trajectory exceeds ' 
-                               'translational limit', bold=False)
-            status = TRAPPED
-            break
-
-          translation_traj = TrajectoryFromStr(translation_traj_str)
-
-          # Check collision (object trajectory)
-          if not self.is_collision_free_SE3_traj(
-            rot_traj, translation_traj, R_beg):
-            self._output_debug('TRAPPED : SE(3) trajectory in collision', 
-                               bold=False)
-            status = TRAPPED
-            break
-        
-          # Check reachability (object trajectory)
-          passed, bimanual_wpts, timestamps = \
-            self.check_SE3_traj_reachability(
-              lie.LieTraj([R_beg, R_end], [rot_traj]), translation_traj, 
-              v_near.config.q_robots, direction=BW)
-          if not passed:
-            self._output_debug('TRAPPED : SE(3) trajectory not reachable', 
-                               bold=False)
-            status = TRAPPED
-            break
-
-          # Now this trajectory is alright.
-          self._output_debug('Advanced : new vertex generated', 
-                             color='green', bold=False)
-          new_q_robots = [wpts[0] for wpts in bimanual_wpts] 
-          new_config = CCConfig(new_q_robots, new_SE3_config)
-          v_new = CCVertex(new_config)
-          self._query.tree_end.add_vertex(v_new, v_near.index, rot_traj, 
-                                          translation_traj, bimanual_wpts, 
-                                          timestamps, is_node=False)
-          v_near = v_new
-
-      if status == TRAPPED:
-        v_near.is_node = True # validate last vertex of this attempt
-
+      # Now the connection is successful
+      query.tree_end.vertices.append(v_near)
+      query.connecting_rot_traj         = rot_traj
+      query.connecting_translation_traj = translation_traj
+      query.connecting_bimanual_wpts    = bimanual_wpts
+      query.connecting_timestamps       = timestamps
+      status = REACHED
+      return status
     return status        
 
 
@@ -1258,174 +1104,76 @@ class CCPlanner(object):
              -  B{TRAPPED}: connection successful
              -  B{REACHED}: connection failed
     """
-    v_test = self._query.tree_end.vertices[-1]
+    query = self._query
+
+    v_test = query.tree_end.vertices[-1]
     nnindices = self._nearest_neighbor_indices(v_test.config.SE3_config, FW)
+    status = TRAPPED
     for index in nnindices:
-      v_near = self._query.tree_start[index]
-      while True:
-        # quaternion
-        q_end  = v_test.config.SE3_config.q
-        qd_end = v_test.config.SE3_config.qd
-        q_beg  = v_near.config.SE3_config.q
-        qd_beg = v_near.config.SE3_config.qd
-        
-        # translation
-        p_end  = v_test.config.SE3_config.p
-        pd_end = v_test.config.SE3_config.pd
-        p_beg  = v_near.config.SE3_config.p
-        pd_beg = v_near.config.SE3_config.pd
+      v_near = query.tree_start[index]
 
-        # Check distance
-        SE3_dist = utils.SE3_distance(v_near.config.SE3_config.T, 
-                                      v_test.config.SE3_config.T, 
-                                      1.0 / np.pi, 1.0)
+      # quaternion
+      q_end  = v_test.config.SE3_config.q
+      qd_end = v_test.config.SE3_config.qd
+      
+      q_beg  = v_near.config.SE3_config.q
+      qd_beg = v_near.config.SE3_config.qd
+      
+      # translation
+      p_end  = v_test.config.SE3_config.p
+      pd_end = v_test.config.SE3_config.pd
 
-        if SE3_dist <= self._query.step_size: # connect directly
-          status = REACHED
+      p_beg  = v_near.config.SE3_config.p
+      pd_beg = v_near.config.SE3_config.pd
+      
+      # Interpolate the object trajectory
+      R_beg = orpy.rotationMatrixFromQuat(q_beg)
+      R_end = orpy.rotationMatrixFromQuat(q_end)
+      rot_traj = lie.InterpolateSO3(R_beg, R_end, qd_beg, qd_end, 
+                                    query.interpolation_duration)
+      translation_traj_str = utils.traj_str_3rd_degree(p_beg, p_end, pd_beg, pd_end, query.interpolation_duration)
 
-          # Interpolate the object trajectory
-          R_beg = orpy.rotationMatrixFromQuat(q_beg)
-          R_end = orpy.rotationMatrixFromQuat(q_end)
-          rot_traj = lie.InterpolateSO3(R_beg, R_end, qd_beg, qd_end, 
-                                        self._query.interpolation_duration)
-          translation_traj_str = utils.traj_str_3rd_degree(
-            p_beg, p_end, pd_beg, pd_end, self._query.interpolation_duration)
+      # Check translational limit
+      # NB: Can skip this step, since it's not likely the traj will exceed the limits given that p_beg and p_end are within limits
+      if not utils.check_translation_traj_str_limits(query.upper_limits, query.lower_limits, translation_traj_str):
+        self._output_debug('TRAPPED : SE(3) trajectory exceeds translational limit', bold=False)
+        continue
 
-          # Check translational limit
-          # NB: Can skip this step, since it's not likely the traj will 
-          # exceed the limits given that p_beg and p_end are within limits
-          if not utils.check_translation_traj_str_limits(
-            self._query.upper_limits, self._query.lower_limits, 
-            translation_traj_str):
-            self._output_debug('TRAPPED : SE(3) trajectory exceeds '
-                               'translational limit', bold=False)
-            status = TRAPPED
-            break
+      translation_traj = TrajectoryFromStr(translation_traj_str)
 
-          translation_traj = TrajectoryFromStr(translation_traj_str)
+      # Check collision (object trajectory)
+      if not self.is_collision_free_SE3_traj(rot_traj, translation_traj, R_beg):
+        self._output_debug('TRAPPED : SE(3) trajectory in collision', bold=False)
+        continue
+      
+      # Check reachability (object trajectory)
+      passed, bimanual_wpts, timestamps = self.check_SE3_traj_reachability(
+        lie.LieTraj([R_beg, R_end], [rot_traj]), translation_traj,
+        v_near.config.q_robots)
 
-          # Check collision (object trajectory)
-          if not self.is_collision_free_SE3_traj(
-            rot_traj, translation_traj, R_beg):
-            self._output_debug('TRAPPED : SE(3) trajectory in collision', 
-                               bold=False)
-            status = TRAPPED
-            break
-          
-          # Check reachability (object trajectory)
-          passed, bimanual_wpts, timestamps = \
-            self.check_SE3_traj_reachability(
-              lie.LieTraj([R_beg, R_end], [rot_traj]), translation_traj,
-              v_near.config.q_robots)
-          if not passed:
-            self._output_debug('TRAPPED : SE(3) trajectory not reachable',
-                               bold=False)
-            status = TRAPPED
-            break
+      if not passed:
+        self._output_debug('TRAPPED : SE(3) trajectory not reachable', bold=False)
+        continue
 
-          # Check similarity of terminal IK solutions
-          eps = 1e-3
-          for i in xrange(2):
-            if not utils.distance(v_test.config.q_robots[i], 
-                      bimanual_wpts[i][-1]) < eps:
-              passed = False
-              break
-          if not passed:
-            self._output_debug('TRAPPED : IK solution discrepancy (robot {0})'
-                               .format(i), bold=False)
-            status = TRAPPED
-            break
+      # Check similarity of terminal IK solutions
+      eps = 1e-3
+      for i in xrange(2):
+        if not utils.distance(v_test.config.q_robots[i], 
+                  bimanual_wpts[i][-1]) < eps:
+          passed = False
+          break
+      if not passed:
+        self._output_debug('TRAPPED : IK solution discrepancy (robot {0})'.format(i), bold=False)
+        continue
 
-          # Now the connection is successful
-          self._query.tree_start.vertices.append(v_near)
-          self._query.connecting_rot_traj         = rot_traj
-          self._query.connecting_translation_traj = translation_traj
-          self._query.connecting_bimanual_wpts    = bimanual_wpts
-          self._query.connecting_timestamps       = timestamps
-
-          v_near.is_node = True
-          return status
-
-        else: # extend towards target
-          status = ADVANCED
-
-          if not utils._is_close_axis(q_beg, q_end):
-            q_end = -q_end
-          q_end = q_beg + self._query.step_size * (q_end - q_beg) / SE3_dist
-          q_end /= np.sqrt(np.dot(q_end, q_end))
-
-          p_end = p_beg + self._query.step_size * (p_end - p_beg) / SE3_dist
-
-          new_SE3_config = SE3Config(q_end, p_end, qd_end, pd_end)
-
-          # Check new config collision
-          if not self.is_collision_free_SE3_config(new_SE3_config):
-            self._output_debug('TRAPPED : SE(3) config in collision', 
-                               bold=False)
-            status = TRAPPED
-            break
-
-          # Check reachability
-            if not self.check_SE3_config_reachability(new_SE3_config):
-              self._output_debug('TRAPPED : SE(3) config not reachable', 
-                                 bold=False)
-              status = TRAPPED
-              break      
-
-          # Interpolate the object trajectory
-          R_beg = orpy.rotationMatrixFromQuat(q_beg)
-          R_end = orpy.rotationMatrixFromQuat(q_end)
-          rot_traj = lie.InterpolateSO3(R_beg, R_end, qd_beg, qd_end, 
-                                        self._query.interpolation_duration)
-          translation_traj_str = utils.traj_str_3rd_degree(
-            p_beg, p_end, pd_beg, pd_end, self._query.interpolation_duration)
-
-          # Check translational limit
-          # NB: Can skip this step, since it's not likely the traj will 
-          # exceed the limits given that p_beg and p_end are within limits
-          if not utils.check_translation_traj_str_limits(
-            self._query.upper_limits, self._query.lower_limits, 
-            translation_traj_str):
-            self._output_debug('TRAPPED : SE(3) trajectory exceeds '
-                               'translational limit', bold=False)
-            status = TRAPPED
-            break
-
-          translation_traj = TrajectoryFromStr(translation_traj_str)
-
-          # Check collision (object trajectory)
-          if not self.is_collision_free_SE3_traj(
-            rot_traj, translation_traj, R_beg):
-            self._output_debug('TRAPPED : SE(3) trajectory in collision', 
-                               bold=False)
-            status = TRAPPED
-            break
-          
-          # Check reachability (object trajectory)
-          passed, bimanual_wpts, timestamps = \
-            self.check_SE3_traj_reachability(
-              lie.LieTraj([R_beg, R_end], [rot_traj]), translation_traj,
-              v_near.config.q_robots)
-          if not passed:
-            self._output_debug('TRAPPED : SE(3) trajectory not reachable',
-                               bold=False)
-            status = TRAPPED
-            break
-
-          # Now this trajectory is alright.
-          self._output_debug('Advanced : new vertex generated', 
-                             color='green', bold=False)
-          new_q_robots = [wpts[-1] for wpts in bimanual_wpts] 
-          new_config = CCConfig(new_q_robots, new_SE3_config)
-          v_new = CCVertex(new_config)
-          self._query.tree_start.add_vertex(v_new, v_near.index, rot_traj, 
-                                            translation_traj, bimanual_wpts, 
-                                            timestamps, is_node=False)
-          v_near = v_new
-
-      if status == TRAPPED:
-        v_near.is_node = True # validate last vertex of this attempt
-
+      # Now the connection is successful
+      query.tree_start.vertices.append(v_near)
+      query.connecting_rot_traj         = rot_traj
+      query.connecting_translation_traj = translation_traj
+      query.connecting_bimanual_wpts    = bimanual_wpts
+      query.connecting_timestamps       = timestamps
+      status = REACHED
+      return status
     return status        
 
   
@@ -1469,7 +1217,9 @@ class CCPlanner(object):
     with self.env:
       self._enable_robots_collision(False)
 
-      for t in np.append(np.arange(0, translation_traj.duration, self._query.discr_check_timestep), translation_traj.duration):
+      for t in np.append(utils.arange(0, translation_traj.duration, 
+                         self._query.discr_check_timestep), 
+                         translation_traj.duration):
         T[0:3, 0:3] = lie.EvalRotation(R_beg, rot_traj, t)
         T[0:3, 3] = translation_traj.Eval(t)
 
@@ -1534,15 +1284,9 @@ class CCPlanner(object):
              -  timestamps:    Timestamps for time parameterization of
                                {bimanual_wpts}.
     """
-    passed, bimanual_wpts, timestamps = self.bimanual_obj_tracker.plan(
-      lie_traj, translation_traj, self.bimanual_T_rel, ref_sols,
-      self._query.discr_timestep, self._query.discr_check_timestep, 
-      self._query.step_size*self._query.predict_multi, self._query.predict,
-      direction)
-    if not passed:
-      return False, [], []
-
-    return True, bimanual_wpts, timestamps
+    return self.bimanual_obj_tracker.plan(lie_traj, translation_traj,
+            self.bimanual_T_rel, ref_sols, self._query.discr_timestep,
+            self._query.discr_check_timestep, direction)
 
   def _nearest_neighbor_indices(self, SE3_config, treetype):
     """
@@ -1562,12 +1306,8 @@ class CCPlanner(object):
       tree = self._query.tree_start
     else:
       tree = self._query.tree_end
-
-    nv = 0
-    for v in tree.vertices:
-      if v.is_node:
-        nv += 1
-
+    nv = len(tree)
+      
     distance_list = [utils.SE3_distance(SE3_config.T, v.config.SE3_config.T, 
                       1.0 / np.pi, 1.0) for v in tree.vertices]
     distance_heap = heap.Heap(distance_list)
@@ -1577,14 +1317,7 @@ class CCPlanner(object):
       nn = nv
     else:
       nn = min(self._query.nn, nv)
-
-    i = 0
-    nnindices = []
-    while i < nn:
-      vertex_index = distance_heap.ExtractMin()[0]
-      if tree[vertex_index].is_node:
-        i += 1
-        nnindices.append(vertex_index)
+    nnindices = [distance_heap.ExtractMin()[0] for i in range(nn)]
     return nnindices
 
   @staticmethod
@@ -1602,7 +1335,7 @@ class CCPlanner(object):
     refresh_step  = sampling_step / speed
 
     T_obj = np.eye(4)
-    for t in np.append(np.arange(0, lie_traj.duration, sampling_step), 
+    for t in np.append(utils.arange(0, lie_traj.duration, sampling_step), 
                        lie_traj.duration):
       T_obj[0:3, 0:3] = lie_traj.EvalRotation(t)
       T_obj[0:3, 3] = translation_traj.Eval(t)
@@ -1722,28 +1455,31 @@ class CCPlanner(object):
         continue
 
       # Check continuity between newly generated bimanual_wpts and original one
-      eps = 1e-3
-      if not (utils.distance(bimanual_wpts[0][0], left_wpts[t0_index]) < eps and utils.distance(bimanual_wpts[1][0], right_wpts[t0_index]) < eps):
+      eps = 5e-2 # Might be too big!!!
+      if not (utils.distance(bimanual_wpts[0][-1], left_wpts[t1_index]) < eps and utils.distance(bimanual_wpts[1][-1], right_wpts[t1_index]) < eps):
         not_continuous_count += 1
         self._output_debug('Not continuous', color='yellow', bold=False)
         continue
 
       # Now the new trajectory passes all tests
       # Replace all the old trajectory segments with the new ones
-      lie_traj = utils.replace_lie_traj_segment(lie_traj, new_lie_traj.trajlist[0],
+      lie_traj = utils.replace_lie_traj_segment(lie_traj, 
+                                                new_lie_traj.trajlist[0],
                                                 t0, t1)            
       translation_traj = utils.replace_traj_segment(translation_traj,
-                                                    new_translation_traj, t0, t1)
+                                                    new_translation_traj, 
+                                                    t0, t1)
       
       first_timestamp_chunk       = timestamps[:t0_index + 1]
       last_timestamp_chunk_offset = timestamps[t1_index]
       last_timestamp_chunk        = [t - last_timestamp_chunk_offset for t in timestamps[t1_index:]]
 
       timestamps = utils.merge_timestamps_list([first_timestamp_chunk, new_timestamps, last_timestamp_chunk])
-      left_wpts  = utils.merge_wpts_list([left_wpts[:t0_index + 1], bimanual_wpts[0], left_wpts[t1_index:]])            
-      right_wpts = utils.merge_wpts_list([right_wpts[:t0_index + 1], bimanual_wpts[1], right_wpts[t1_index:]])
+      left_wpts  = utils.merge_wpts_list([left_wpts[:t0_index + 1], bimanual_wpts[0], left_wpts[t1_index:]], eps=eps)            
+      right_wpts = utils.merge_wpts_list([right_wpts[:t0_index + 1], bimanual_wpts[1], right_wpts[t1_index:]], eps=eps)
       
-      self._output_debug('Shortcutting successful.', color='green', bold=False)
+      self._output_debug('Shortcutting successful.', color='green', 
+                          bold=False)
       successful_count += 1
 
     t_end = time()
@@ -1836,10 +1572,10 @@ class BimanualObjectTracker(object):
     self._debug   = debug
     self._nrobots = len(robots)
     self._vmax    = robots[0].GetDOFVelocityLimits()[0:self._ndof]
+    self._jmin    = robots[0].GetDOFLimits()[0][0:self._ndof]
     self._jmax    = robots[0].GetDOFLimits()[1][0:self._ndof]
     self._maxiter = 8
-    self._weight  = 10.
-    self._tol     = 1e-6
+    self._tol     = 1e-7
 
   def update_vmax(self):
     """
@@ -1847,7 +1583,7 @@ class BimanualObjectTracker(object):
     """
     self._vmax = self.robots[0].GetDOFVelocityLimits()[0:self._ndof]
 
-  def plan(self, lie_traj, translation_traj, bimanual_T_rel, q_robots_init, discr_timestep, discr_check_timestep, q_threshold, predict, direction=FW):
+  def plan(self, lie_traj, translation_traj, bimanual_T_rel, q_robots_init, discr_timestep, discr_check_timestep, direction=FW):
     """
     Plan trajectories for both robots to track the manipulated object.
 
@@ -1871,11 +1607,6 @@ class BimanualObjectTracker(object):
                                  (other waypoints are interpolated)
                                  This needs to be multiple of C{discr_timestep} for uniformity in 
                                  trajectory generated.
-    @type           q_threshold: float
-    @param          q_threshold: Distance threshold for predicting whether 
-                                 the new end-effector transformation is 
-                                 trackable. This value is set to 8x 
-                                 query.step_size, determined from experiments.
     @type             direction: int
     @param            direction: Direction of this planning. This is to be BW 
                                  when this function is called in 
@@ -1891,19 +1622,6 @@ class BimanualObjectTracker(object):
     """
     if direction == FW:
       duration = lie_traj.duration
-
-      if predict:
-        # Predict whether IK solutions could exist
-        T_obj_goal = np.eye(4)
-        T_obj_goal[0:3, 0:3] = lie_traj.EvalRotation(duration)
-        T_obj_goal[0:3, 3] = translation_traj.Eval(duration)
-        for i in xrange(self._nrobots):
-          self.robots[i].SetActiveDOFValues(q_robots_init[i])
-          q_sol = self.manips[i].FindIKSolution(np.dot(T_obj_goal, bimanual_T_rel[i]), IK_IGNORE_COLLISION)
-          if q_sol is None:
-            return False, [], []
-          if utils.distance(q_robots_init[i], q_sol, 3) > q_threshold:
-            return False, [], []
 
       cycle_length = int(discr_check_timestep / discr_timestep)
 
@@ -1922,7 +1640,7 @@ class BimanualObjectTracker(object):
       self._jd_max = self._vmax * discr_check_timestep
 
       T_obj = np.eye(4)
-      for t in np.append(np.arange(discr_check_timestep, duration, 
+      for t in np.append(utils.arange(discr_check_timestep, duration, 
                          discr_check_timestep), duration):
         T_obj[0:3, 0:3] = lie_traj.EvalRotation(t)
         T_obj[0:3, 3] = translation_traj.Eval(t)
@@ -1931,40 +1649,27 @@ class BimanualObjectTracker(object):
         for i in xrange(self._nrobots):
           bimanual_T_gripper.append(np.dot(T_obj, bimanual_T_rel[i]))
         
-        q_robots_next = []
+        q_robots_new = []
         for i in xrange(self._nrobots):
           q_sol = self._compute_IK(i, bimanual_T_gripper[i], q_robots_prev[i])
           if q_sol is None:
             return False, [], []
-          q_robots_next.append(q_sol)
+          q_robots_new.append(q_sol)
 
-        if not self._is_feasible_bimanual_config(q_robots_next, q_robots_prev, T_obj):
+        if not self._is_feasible_bimanual_config(q_robots_new, q_robots_prev, T_obj):
           return False, [], []
 
         # New bimanual config now passed all checks
         # Interpolate waypoints in-between
         for i in xrange(self._nrobots):
-          bimanual_wpts[i] += utils.discretize_wpts(q_robots_prev[i], q_robots_next[i], cycle_length)
+          bimanual_wpts[i] += utils.discretize_wpts(q_robots_prev[i], q_robots_new[i], cycle_length)
         timestamps += list(np.linspace(t_prev+discr_timestep, t, cycle_length))
         t_prev = t
-        q_robots_prev = q_robots_next
+        q_robots_prev = q_robots_new
       
       return True, bimanual_wpts, timestamps
 
     else:
-      if predict:
-        # Predict whether IK solutions could exist
-        T_obj_goal = np.eye(4)
-        T_obj_goal[0:3, 0:3] = lie_traj.EvalRotation(0)
-        T_obj_goal[0:3, 3] = translation_traj.Eval(0)
-        for i in xrange(self._nrobots):
-          self.robots[i].SetActiveDOFValues(q_robots_init[i])
-          q_sol = self.manips[i].FindIKSolution(np.dot(T_obj_goal, bimanual_T_rel[i]), IK_IGNORE_COLLISION)
-          if q_sol is None:
-            return False, [], []
-          if utils.distance(q_robots_init[i], q_sol, 3) > q_threshold:
-            return False, [], []
-
       duration = lie_traj.duration
       cycle_length = int(discr_check_timestep / discr_timestep)
 
@@ -1983,8 +1688,8 @@ class BimanualObjectTracker(object):
       self._jd_max = self._vmax * discr_check_timestep
       
       T_obj = np.eye(4)
-      for t in np.append(np.arange(duration-discr_check_timestep, 
-                         discr_check_timestep, -discr_check_timestep), 0):
+      for t in np.append(utils.arange(duration-discr_check_timestep, 
+                         0, -discr_check_timestep), 0):
         T_obj[0:3, 0:3] = lie_traj.EvalRotation(t)
         T_obj[0:3, 3] = translation_traj.Eval(t)
 
@@ -1992,23 +1697,23 @@ class BimanualObjectTracker(object):
         for i in xrange(self._nrobots):
           bimanual_T_gripper.append(np.dot(T_obj, bimanual_T_rel[i]))
         
-        q_robots_next = []
+        q_robots_new = []
         for i in xrange(self._nrobots):
           q_sol = self._compute_IK(i, bimanual_T_gripper[i], q_robots_prev[i])
           if q_sol is None:
             return False, [], []
-          q_robots_next.append(q_sol)
+          q_robots_new.append(q_sol)
 
-        if not self._is_feasible_bimanual_config(q_robots_next, q_robots_prev, T_obj):
+        if not self._is_feasible_bimanual_config(q_robots_new, q_robots_prev, T_obj):
           return False, [], []
 
         # New bimanual config now passed all checks
         # Interpolate waypoints in-between
         for i in xrange(self._nrobots):
-          bimanual_wpts[i] += utils.discretize_wpts(q_robots_prev[i], q_robots_next[i], cycle_length)
+          bimanual_wpts[i] += utils.discretize_wpts(q_robots_prev[i], q_robots_new[i], cycle_length)
         timestamps += list(np.linspace(t_prev-discr_timestep, t, cycle_length))
         t_prev = t
-        q_robots_prev = q_robots_next
+        q_robots_prev = q_robots_new
 
       # Reverse waypoints and timestamps
       bimanual_wpts[0].reverse()
@@ -2079,7 +1784,7 @@ class BimanualObjectTracker(object):
       q = q + q_delta
 
       # Ensure IK solution returned is within joint position limit
-      q = np.maximum(np.minimum(q, self._jmax), -self._jmax)
+      q = np.maximum(np.minimum(q, self._jmax), self._jmin)
 
       cur_objective = self._compute_objective(robot_index, target_pose, q)
       if cur_objective < self._tol:
@@ -2090,7 +1795,6 @@ class BimanualObjectTracker(object):
       return None
 
     return q
-
 
   def _compute_objective(self, robot_index, target_pose, q):
     """    
@@ -2114,8 +1818,7 @@ class BimanualObjectTracker(object):
       cur_pose[0:4] *= -1.
 
     error = target_pose - cur_pose
-
-    return self._weight * np.dot(error, error)
+    return np.dot(error, error)
     
   def _compute_q_delta(self, robot_index, target_pose, q):
     """    

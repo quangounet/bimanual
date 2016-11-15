@@ -65,7 +65,7 @@ if __name__ == "__main__":
   rave_utils.load_IK_model([left_robot, right_robot])
 
   ############### Move to pre-grasp position ###############
-  qgrasp_left = [1, 2, 1, 0.013]
+  qgrasp_left = [1, 2, 4, -0.013]
   qgrasp_right = [0, 2, 0, 0.13]
 
   left_robot.SetActiveDOFValues(
@@ -80,10 +80,10 @@ if __name__ == "__main__":
 
   myObject = putils.create_placement_object(Lshape, env, T_rest=T_table)
   Lshape.SetTransform(np.array(
-      [[ 0.2639622163,  0.8893508793,  0.373334919 ,  0.2613566816],
-       [ 0.9586656352, -0.2845350591, -0.0000000021,  0.0416169688],
-       [ 0.1062268713,  0.3579033579, -0.9276966305,  0.1387752742],
-       [ 0.          ,  0.          ,  0.          ,  1.          ]]))
+    [[ 0.2639622163,  0.8893508793,  0.373334919 ,  0.2613566816],
+     [ 0.9586656352, -0.2845350591, -0.0000000021,  0.0416169688],
+     [ 0.1062268713,  0.3579033579, -0.9276966305,  0.1387752742],
+     [ 0.          ,  0.          ,  0.          ,  1.          ]]))
 
   T_left_gripper = pymanip_utils.ComputeTGripper2(
                       Lshape, qgrasp_left[0], qgrasp_left)
@@ -92,9 +92,15 @@ if __name__ == "__main__":
   left_robot.SetActiveDOFValues(left_manip.FindIKSolution(T_left_gripper, orpy.IkFilterOptions.CheckEnvCollisions))
   right_robot.SetActiveDOFValues(right_manip.FindIKSolution(T_right_gripper, orpy.IkFilterOptions.CheckEnvCollisions))
 
+  q_robots_grasp = [0.45600000862032097, 0.45600000862032097]
+  q_robots_efo = [0, 0]
+
   fmax = 100
   mu = 0.5
-  res = intermediateplacement.ComputeFeasibleClosePlacements([left_robot, right_robot], [qgrasp_left, qgrasp_right], Lshape, Lshape.GetTransform(), T_table, fmax, mu, placementType=2, myObject=myObject)
+  from time import time
+  t = time()
+  T_feas = intermediateplacement.ComputeFeasibleClosePlacements([left_robot, right_robot], [qgrasp_left, qgrasp_right], q_robots_grasp, q_robots_efo, Lshape, Lshape.GetTransform(), fmax, mu, myObject, placementType=2)
+  print time() -t
 
 
 

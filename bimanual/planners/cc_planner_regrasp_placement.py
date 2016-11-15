@@ -14,6 +14,7 @@ import traceback
 import TOPP
 from bimanual.utils.utils import colorize, reverse_traj
 from bimanual.utils import utils, heap, lie
+from pymanip.planningutils import myobject, intermediateplacement, staticequilibrium
 from IPython import embed
 
 # Global parameters
@@ -476,7 +477,7 @@ class CCQuery(object):
                q_robots_grasp, qgrasps, T_obj_start, T_obj_goal=None, nn=-1, 
                step_size=0.7, velocity_scale=1, interpolation_duration=None, 
                discr_timestep=5e-3, discr_check_timestep=None,
-               regrasp_limit=1):
+               fmax=100, mu=0.5, regrasp_limit=1):
     """
     CCQuery constructor. It is independent of robots to be planned since robot
     info will be stored in planner itself.
@@ -541,6 +542,8 @@ class CCQuery(object):
                                    SE3_config_end=SE3_config_goal)
     self.q_robots_grasp = q_robots_grasp
     self.qgrasps        = qgrasps
+    self.fmax           = fmax
+    self.mu             = mu
 
     # Initialize RRTs
     self.database               = CCVertexDatabase()
@@ -963,6 +966,96 @@ class CCPlanner(object):
 
     self.reset_config(query)
 
+  def _move_to_placement(self, SE3_config_start, SE3_config_place,
+                         q_robots_start):
+    """
+    Extend the tree(s) in C{self._query} towards the given SE3 config.
+
+    @type  SE3_config: SE3Config
+    @param SE3_config: Configuration towards which the tree will be extended.
+
+    @rtype:  int
+    @return: Result of this extension attempt. Possible values:
+             -  B{TRAPPED}:  when the extension fails
+             -  B{REACHED}:  when the extension reaches the given config
+             -  B{ADVANCED}: when the tree is extended towards the given
+                             config
+    """
+    query = self._query
+
+    q_beg  = SE3_config_start.q
+    qd_beg = SE3_config_start.qd
+    p_beg  = SE3_config_start.p
+    pd_beg = SE3_config_start.pd
+
+    q_end = SE3_config_place.q
+    p_end = SE3_config_place.p
+    qd_end = SE3_config_place.qd
+    pd_end = SE3_config_place.pd
+
+      
+    # Interpolate a SE3 trajectory for the object
+    R_beg = orpy.rotationMatrixFromQuat(q_beg)
+    R_end = orpy.rotationMatrixFromQuat(q_end)
+    rot_traj = lie.InterpolateSO3(R_beg, R_end, qd_beg, qd_end,
+                                  query.interpolation_duration)
+    translation_traj_str = utils.traj_str_3rd_degree(p_beg, p_end, pd_beg, pd_end, query.interpolation_duration)
+    translation_traj = TrajectoryFromStr(translation_traj_str)
+
+    # Check collision (object trajectory)
+    res = self.is_collision_free_SE3_traj(rot_traj, translation_traj, R_beg)
+    if not res:
+      self._output_debug('TRAPPED : SE(3) trajectory in collision', 
+                         bold=False)
+      return False
+      
+    # Check reachability (object trajectory)
+    res = self.check_SE3_traj_reachability(lie.LieTraj([R_beg, R_end],
+            [rot_traj]), translation_traj, q_robots_start)
+    if res[0] is False:
+      passed, bimanual_wpts, timestamps = res[1:]
+      if not passed:
+        self._output_debug('TRAPPED : SE(3) trajectory not reachable', 
+                           bold=False)
+        return False
+
+      # Now this trajectory is alright.
+      self._output_debug('Successful : new vertex generated', 
+                         color='green', bold=False)
+      new_q_robots = [wpts[-1] for wpts in bimanual_wpts] 
+
+      if reextend:
+        q_robots_real = np.array(new_q_robots) # post regrasp configs
+        q_robots_real[reextend_info[0]] = reextend_info[1]
+        v_new = CCVertex(q_robots_start=v_near.q_robots_end,
+                         q_robots_inter=new_q_robots,
+                         q_robots_end=q_robots_real,
+                         SE3_config_start=v_near.SE3_config_end,
+                         SE3_config_end=new_SE3_config)
+        self._output_debug('Adding regrasping', 'yellow')
+        v_new._add_regrasp_action()
+      else:
+        v_new = CCVertex(q_robots_start=v_near.q_robots_end,
+                         q_robots_end=new_q_robots,
+                         SE3_config_start=v_near.SE3_config_end,
+                         SE3_config_end=new_SE3_config)
+
+      cur_tree.add_vertex(v_new, v_near.index, rot_traj,
+                          translation_traj, bimanual_wpts, timestamps)
+      return status,
+    else:
+      if v_near.regrasp_count >= query.regrasp_limit \
+        or self._is_bad_regrasp_T(robot_indices=[res[1]], 
+                                  T_obj_regrasp=res[4]):
+        status = TRAPPED
+        continue
+
+      self._output_debug('TRAPPED : SE(3) trajectory need regrasping', 
+                         bold=False)
+      status = NEEDREGRASP
+      return status, res[1:], index
+  return status,
+
   def _plan_regrasp_trajs(self):
     self._output_info('Global path found.', 'yellow')
     t_begin = time()
@@ -995,6 +1088,34 @@ class CCPlanner(object):
             for robot, q_robot_inter in zip(self.robots,
                                             vertex.q_robots_inter):
               robot.SetActiveDOFValues(q_robot_inter)
+
+            embed()
+            exit(0)
+            q_robots_efo = [robot.GetDOFValues()[-1] for robot in self.robots]
+
+            T_place = intermediateplacement.ComputeFeasibleClosePlacements(
+              self.robots, query.qgrasps, query.q_robots_grasp, q_robots_efo, 
+              self.obj, vertex.SE3_config_end.T, query.fmax, query.mu, 
+              self.pobj, placementType=2)
+            if T_place is None:
+              self._output_info('No valid placement, reforming trees...', 
+                                'red')
+              query.regrasp_T_blacklist[i].append(vertex.SE3_config_end.T)
+              self._reform_trees(tree_type, spine_indices[index_i:])
+              return False
+
+            SE3_config_place = SE3Config.from_matrix(T_place)
+            self._move_to_placement(vertex.SE3_config_end, SE3_config_place, 
+                                    vertex.q_robots_inter)
+
+
+
+
+
+
+
+
+
             # start planning
             for i in xrange(self._nrobots):
               q_robot_inter = vertex.q_robots_inter[i]
@@ -1753,11 +1874,7 @@ class CCPlanner(object):
                                     v.regrasp_count <= regrasp_count_limit)])
     distance_list = [utils.SE3_distance(SE3_config.T, v.SE3_config_end.T, 
                       1.0 / np.pi, 1.0) for v in cur_tree_vertices]
-    try:
-      distance_heap = heap.Heap(distance_list)
-    except:
-      print 'hahaha finally'
-      embed()
+    distance_heap = heap.Heap(distance_list)
         
     if (self._query.nn == -1):
       # to consider all vertices in the tree as nearest neighbors

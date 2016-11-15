@@ -1751,11 +1751,7 @@ class CCPlanner(object):
                                     v.regrasp_count <= regrasp_count_limit)])
     distance_list = [utils.SE3_distance(SE3_config.T, v.SE3_config_end.T, 
                       1.0 / np.pi, 1.0) for v in cur_tree_vertices]
-    try:
-      distance_heap = heap.Heap(distance_list)
-    except:
-      print 'hahaha finally'
-      embed()
+    distance_heap = heap.Heap(distance_list)
         
     if (self._query.nn == -1):
       # to consider all vertices in the tree as nearest neighbors

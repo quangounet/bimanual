@@ -81,15 +81,19 @@ if __name__ == "__main__":
   # Choose one grasp for testing
   qgrasp_l = [14, 2, 0, -0.05429823617575867]
   qgrasp_r = [5, 0, 2, -0.10022448427655264]
-
+  q_robots_grasp = [0.59900001215283205, 0.54600000963546513]
+  q_robots_efo = [0, 0]
   T_left_gripper = pymanip_utils.ComputeTGripper2(chair, qgrasp_l[0], qgrasp_l)
   T_right_gripper = pymanip_utils.ComputeTGripper2(chair, qgrasp_r[0], qgrasp_r)
   left_robot.SetActiveDOFValues(left_manip.FindIKSolutions(T_left_gripper, orpy.IkFilterOptions.CheckEnvCollisions)[0])
   right_robot.SetActiveDOFValues(right_manip.FindIKSolutions(T_right_gripper, orpy.IkFilterOptions.CheckEnvCollisions)[0])
   # Compute a feasible placement on the floor
-  fmax = 100
+  fmax = 1000
   mu = 0.5
   placementType = 2 # placing on a vertex
-  res = intermediateplacement.ComputeFeasibleClosePlacements([left_robot, right_robot], [qgrasp_l, qgrasp_r], chair, T_chair, T_table, fmax, mu, placementType=placementType, myObject=myObject)
+  from time import time
+  t = time()
+  res = intermediateplacement.ComputeFeasibleClosePlacements([left_robot, right_robot], [qgrasp_l, qgrasp_r], q_robots_grasp, q_robots_efo, chair, T_chair, fmax, mu, placementType=placementType, myObject=myObject)
+  print time() -t 
 
 

@@ -14,7 +14,6 @@
             <diffusecolor>1 1 1</diffusecolor>
         </geom>
         <translation>-0.16 0.10 0</translation>
-        <rotationaxis>0 0 1 180</rotationaxis>
         <mass type="mimicgeom">
           <density>700</density>
         </mass>

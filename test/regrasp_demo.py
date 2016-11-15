@@ -65,7 +65,7 @@ if __name__ == "__main__":
   rave_utils.load_IK_model([left_robot, right_robot])
 
   ############### Move to pre-grasp position ###############
-  qgrasp_left = [1, 2, 1, 0.013]
+  qgrasp_left = [1, 2, 4, -0.013]
   qgrasp_right = [0, 2, 0, 0.13]
   T_left_gripper = pymanip_utils.ComputeTGripper2(
                       Lshape, qgrasp_left[0], qgrasp_left)
@@ -80,7 +80,8 @@ if __name__ == "__main__":
   left_robot.WaitForController(0)
   right_taskmanip.CloseFingers()
   right_robot.WaitForController(0)
-
+  embed()
+  exit(0)
 
   ################## closed chain planning ###################
 
@@ -100,15 +101,15 @@ if __name__ == "__main__":
                      q_robots_grasp, T_obj_start, T_obj_goal, seeds=[0,0])
 
   p_Lshape = putils.create_placement_object(Lshape, env, T_rest=T_table)
-  embed()
-  exit(0)
+
 
   import bimanual.planners.cc_planner_regrasp_placement as ccp 
   ccplanner = ccp.CCPlanner(Lshape, p_Lshape, [left_robot, right_robot], 
                             plan_regrasp=True, debug=False)
   ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, 
                         q_robots_goal, q_robots_grasp, qgrasps,
-                        T_obj_start, nn=2, step_size=0.5, regrasp_limit=1)
+                        T_obj_start, nn=2, step_size=0.5, 
+                        fmax=100, mu=0.5, regrasp_limit=1)
   ccplanner.set_query(ccquery)
   res = ccplanner.solve(timeout=30)
 

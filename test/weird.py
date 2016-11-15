@@ -78,12 +78,12 @@ if __name__ == "__main__":
 
   embed()
   exit(0)
-
-  Lshape.SetTransform(np.array(
+  T_Lshape = np.array(
       [[ 0.2639622163,  0.8893508793,  0.373334919 ,  0.2613566816],
        [ 0.9586656352, -0.2845350591, -0.0000000021,  0.0416169688],
        [ 0.1062268713,  0.3579033579, -0.9276966305,  0.1387752742],
-       [ 0.          ,  0.          ,  0.          ,  1.          ]]))
+       [ 0.          ,  0.          ,  0.          ,  1.          ]])
+  Lshape.SetTransform(T_Lshape)
 
   T_left_gripper = pymanip_utils.ComputeTGripper2(
                       Lshape, qgrasp_left[0], qgrasp_left)
@@ -95,7 +95,10 @@ if __name__ == "__main__":
   myObject.SetRestingSurfaceTransform(T_table)
   fmax = 100
   mu = 0.5
-  res = intermediateplacement.ComputeFeasibleClosePlacements([left_robot, right_robot], [qgrasp_left, qgrasp_right], Lshape, Lshape.GetTransform(), T_table, fmax, mu, placementType=2, myObject=myObject)
+  from time import time
+  t = time()
+  res = intermediateplacement.ComputeFeasibleClosePlacements([left_robot, right_robot], [qgrasp_left, qgrasp_right], Lshape, T_Lshape, T_table, fmax, mu, placementType=2, myObject=myObject)
+  print time() -t
 
 
 

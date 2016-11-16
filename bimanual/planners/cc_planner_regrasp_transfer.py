@@ -1106,6 +1106,7 @@ class CCPlanner(object):
               self.loose_gripper(query, [i])
             else:
               self._output_info('Planning failed', 'red')
+              query.regrasp_T_blacklist[i].append(v_goal.SE3_config_end.T)
               self.loose_gripper(query)
               return False
 

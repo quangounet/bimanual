@@ -80,9 +80,6 @@ if __name__ == "__main__":
   left_robot.WaitForController(0)
   right_taskmanip.CloseFingers()
   right_robot.WaitForController(0)
-  embed()
-  exit(0)
-
   ################## closed chain planning ###################
 
   obj_translation_limits =  [[0.7, 0.5, 1.2], [-0.5, -0.5, 0]]
@@ -102,6 +99,8 @@ if __name__ == "__main__":
 
   p_Lshape = putils.create_placement_object(Lshape, env, T_rest=T_table)
 
+  embed()
+  exit(0)
 
   import bimanual.planners.cc_planner_regrasp_placement as ccp 
   ccplanner = ccp.CCPlanner(Lshape, p_Lshape, [left_robot, right_robot], 
@@ -113,6 +112,6 @@ if __name__ == "__main__":
   ccplanner.set_query(ccquery)
   res = ccplanner.solve(timeout=30)
 
-  ccplanner.shortcut(ccquery, maxiters=[20, 50])
-  ccplanner.visualize_cctraj(ccquery.cctraj, speed=2)
+  ccplanner.shortcut(ccquery, maxiters=[30, 60])
+  ccplanner.visualize_cctraj(ccquery.cctraj, speed=1)
 

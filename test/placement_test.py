@@ -75,8 +75,7 @@ if __name__ == "__main__":
     [-0.8419911695,  0.9491865457,  0.9209619619, -3.1415926536,
      -1.2714441461,  2.2996014841])
 
-  embed()
-  exit(0)
+
 
   myObject = putils.create_placement_object(Lshape, env, T_rest=T_table)
   Lshape.SetTransform(np.array(
@@ -98,6 +97,8 @@ if __name__ == "__main__":
   fmax = 100
   mu = 0.5
   from time import time
+  embed()
+  exit(0)
   t = time()
   T_feas = intermediateplacement.ComputeFeasibleClosePlacements([left_robot, right_robot], [qgrasp_left, qgrasp_right], q_robots_grasp, q_robots_efo, Lshape, Lshape.GetTransform(), fmax, mu, myObject, placementType=2)
   print time() -t

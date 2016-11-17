@@ -14,7 +14,7 @@ model_path = path.abspath(path.join(path.dirname(__file__), "../xml"))
 
 if __name__ == "__main__":
   # Generic configuration
-  np.set_printoptions(precision=10, suppress=True)
+  np.set_printoptions(precision=20, suppress=True)
   
   # Load OpenRAVE environment
   scene_file = model_path + '/worlds/bimanual_setup_regrasp.env.xml'
@@ -104,4 +104,4 @@ if __name__ == "__main__":
   print time() -t
 
 
-
+  

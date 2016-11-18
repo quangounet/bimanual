@@ -1320,10 +1320,20 @@ class CCPlanner(object):
           elif vertex.contain_regrasp == STARTREGRASP:
             q_robots_efo = [robot.GetDOFValues()[-1] for robot in self.robots]
 
-            T_place = intermediateplacement.ComputeFeasibleClosePlacements(
-              self.robots, query.qgrasps, query.q_robots_grasp, q_robots_efo, 
-              self.obj, vertex.SE3_config_start.T, query.fmax, query.mu, 
-              self.pobj, placementType=2)
+            place_count = 20
+            perturb_first = False
+            for i in xrange(place_count):
+              if i > 0:
+                perturb_first = True
+              print i
+              T_place = intermediateplacement.ComputeFeasibleClosePlacements(
+                self.robots, query.qgrasps, query.q_robots_grasp, 
+                q_robots_efo, self.obj, vertex.SE3_config_start.T,
+                query.fmax, query.mu, self.pobj, placementType=2,
+                perturb_first=perturb_first)
+              if T_place is not None:
+                break
+
             if T_place is None:
               self._output_info('No valid placement, reforming trees...', 
                                 'red')
@@ -2013,7 +2023,7 @@ class CCPlanner(object):
     for robot_index in robot_indices:
       for T in self._query.regrasp_T_blacklist[robot_index]:
         if utils.SE3_distance(T, T_obj_regrasp, 
-                              1.0 / np.pi, 1.0) < self._query.step_size/2.0:
+                              1.0 / np.pi, 1.0) < self._query.step_size/4.0:
           self._output_info('Attempt to add regrasp but at bad T.',
                              bold=False)
           return True

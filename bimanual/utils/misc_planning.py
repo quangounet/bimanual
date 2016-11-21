@@ -36,13 +36,15 @@ def plan_transit_motion(robot, q_start, q_goal, pregrasp_start=True, pregrasp_go
   manip = robot.GetActiveManipulator()
   basemanip = orpy.interfaces.BaseManipulation(robot)
   q_original = robot.GetActiveDOFValues()
-  with env:
+
+  traj_pregrasp_start = None
+  traj_pregrasp_goal = None
+  with robot:
     # Plan pregrasp motion at the start configuration
     if pregrasp_start:
       robot.SetActiveDOFValues(q_start)
       eematrix = manip.GetTransform()
       direction = -eematrix[0:3, 2]
-      traj_pregrasp_start = None
       try:
         traj_pregrasp_start = basemanip.MoveHandStraight(direction, minsteps=minsteps, maxsteps=maxsteps, steplength=steplength, starteematrix=eematrix, execute=execute, outputtrajobj=True)
       except:
@@ -68,7 +70,6 @@ def plan_transit_motion(robot, q_start, q_goal, pregrasp_start=True, pregrasp_go
       robot.SetActiveDOFValues(q_goal)
       eematrix = manip.GetTransform()
       direction = -eematrix[0:3, 2]
-      traj_pregrasp_goal = None
       try:
         traj_pregrasp_goal = basemanip.MoveHandStraight(direction, minsteps=minsteps, maxsteps=maxsteps, steplength=steplength, starteematrix=eematrix, execute=execute, outputtrajobj=True)
       except:
@@ -86,7 +87,8 @@ def plan_transit_motion(robot, q_start, q_goal, pregrasp_start=True, pregrasp_go
           pregrasp_goal = False
         else:
           traj_pregrasp_goal_rev = orpy.planningutils.ReverseTrajectory(traj_pregrasp_goal)
-          orpy.planningutils.RetimeActiveDOFTrajectory(traj_pregrasp_goal_rev, robot, hastimestamps=False, maxvelmult=0.9, maxaccelmult=0.81, plannername="parabolictrajectoryretimer")      
+          orpy.planningutils.RetimeActiveDOFTrajectory(traj_pregrasp_goal_rev, robot, hastimestamps=False, maxvelmult=0.9, maxaccelmult=0.81, plannername="parabolictrajectoryretimer")
+          traj_pregrasp_goal = traj_pregrasp_goal_rev
     else:
       new_q_goal = q_goal
 
@@ -117,34 +119,37 @@ def plan_transit_motion(robot, q_start, q_goal, pregrasp_start=True, pregrasp_go
       _log.info("MoveActiveJoints failed.")
       return None
 
-    # Combine all trajectory segments into one. Note that although all trajectories are currently
-    # parabolic, they might have different ConfigurationSpecification. We need to fix this first
-    # before combining all trajectories into a single trajectory.
-    spec = traj_connect.GetConfigurationSpecification()
-    if pregrasp_start and pregrasp_goal:
-      orpy.planningutils.ConvertTrajectorySpecification(traj_pregrasp_start, spec)
-      orpy.planningutils.ConvertTrajectorySpecification(traj_pregrasp_goal_rev, spec)
-      trajlist = [traj_pregrasp_start, traj_connect, traj_pregrasp_goal_rev]
-    elif pregrasp_start:
-      orpy.planningutils.ConvertTrajectorySpecification(traj_pregrasp_start, spec)
-      trajlist = [traj_pregrasp_start, traj_connect]
-    elif pregrasp_goal:
-      orpy.planningutils.ConvertTrajectorySpecification(traj_pregrasp_goal_rev, spec)
-      trajlist = [traj_connect, traj_pregrasp_goal_rev]
-    else:
-      trajlist = [traj_connect]
-
-    if len(trajlist) == 1:
-      final_traj = trajlist[0]
-    else:
-      final_traj = orpy.RaveCreateTrajectory(env, "")
-      cloning_option = 0
-      final_traj.Clone(trajlist[0], cloning_option)
-      for traj in trajlist[1:]:
-        for iwaypoint in xrange(traj.GetNumWaypoints()):
-          waypoint = traj.GetWaypoint(iwaypoint)
-          final_traj.Insert(final_traj.GetNumWaypoints(), waypoint)
-
+    trajs_list = [traj for traj in [traj_pregrasp_start, traj_connect, traj_pregrasp_goal] if traj is not None]
+    final_traj = combine_openrave_trajectories(trajs_list)
     return final_traj
 
   
+def combine_openrave_trajectories(trajs_list):
+  """
+  Combine trajectories in the given list into one single OpenRAVE trajectory.
+
+  @type   trajs_list: list of openravepy.Trajectory
+  @param  trajs_list: Trajectories to be combined
+
+  @rtype: oepnravepy.Trajectory
+  @return: An OpenRAVE trajectory which is a concatenation of trajectories in trajs_list.
+
+  """
+  # Get one configuration specification from the first trajectory and convert configspec
+  # of everyone else to be the same.
+  spec = trajs_list[0].GetConfigurationSpecification()
+  for traj in trajs_list[1:]:
+    orpy.planningutils.ConvertTrajectorySpecification(traj, spec)
+
+  traj_all = orpy.RaveCreateTrajectory(trajs_list[0].GetEnv(), "")
+  cloning_option = 0
+  traj_all.Clone(trajs_list[0], cloning_option)
+  for traj in trajs_list[1:]:
+    for iwaypoint in xrange(traj.GetNumWaypoints()):
+      waypoint = traj.GetWaypoint(iwaypoint)
+      traj_all.Insert(traj_all.GetNumWaypoints(), waypoint)
+
+  return traj_all
+
+  
+    

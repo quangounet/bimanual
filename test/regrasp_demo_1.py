@@ -4,6 +4,7 @@ import numpy as np
 import openravepy as orpy
 import ikea_openrave.utils as rave_utils
 from bimanual.utils import utils
+from bimanual.utils import placement_utils as putils
 from IPython import embed
 import pymanip.planningutils.utils as pymanip_utils
 from pymanip.planningutils import myobject, intermediateplacement, staticequilibrium
@@ -20,9 +21,8 @@ if __name__ == "__main__":
   env = orpy.Environment()
   env.SetViewer('qtcoin')
 
-  Lshape = env.ReadKinBodyXMLFile(model_path + '/objects/Lshape_regrasp_weird.kinbody.xml')
+  Lshape = env.ReadKinBodyXMLFile(model_path + '/objects/Lshape_regrasp.kinbody.xml')
   env.Add(Lshape)
-  myObject = myobject.MyObject(Lshape)
   
   env.Load(scene_file)
 
@@ -44,7 +44,6 @@ if __name__ == "__main__":
                        [ 0.   , -0.   , -1.   ,  0.159],
                        [ 0.   ,  0.   ,  0.   ,  1.   ]])
   T_table = np.eye(4)
-  T_table[2][3] += 0.02
   with env:
     left_robot.SetTransform(T_left_robot)
     right_robot.SetTransform(T_right_robot)
@@ -66,36 +65,53 @@ if __name__ == "__main__":
   rave_utils.load_IK_model([left_robot, right_robot])
 
   ############### Move to pre-grasp position ###############
-  qgrasp_left = [1, 2, 1, 0.013]
+  qgrasp_left = [1, 2, 4, -0.013]
   qgrasp_right = [0, 2, 0, 0.13]
-
-  left_robot.SetActiveDOFValues(
-    [ 0.6949541317,  1.3183457567,  0.2273780467,  3.1415926536,
-      -1.5958688501,  2.2657504585])
-  right_robot.SetActiveDOFValues(
-    [-0.8419911695,  0.9491865457,  0.9209619619, -3.1415926536,
-     -1.2714441461,  2.2996014841])
-
-  embed()
-  exit(0)
-
-  Lshape.SetTransform(np.array(
-      [[ 0.2639622163,  0.8893508793,  0.373334919 ,  0.2613566816],
-       [ 0.9586656352, -0.2845350591, -0.0000000021,  0.0416169688],
-       [ 0.1062268713,  0.3579033579, -0.9276966305,  0.1387752742],
-       [ 0.          ,  0.          ,  0.          ,  1.          ]]))
-
   T_left_gripper = pymanip_utils.ComputeTGripper2(
                       Lshape, qgrasp_left[0], qgrasp_left)
   T_right_gripper = pymanip_utils.ComputeTGripper2(
                       Lshape, qgrasp_right[0], qgrasp_right)
-  left_robot.SetActiveDOFValues(left_manip.FindIKSolution(T_left_gripper, orpy.IkFilterOptions.CheckEnvCollisions))
-  right_robot.SetActiveDOFValues(right_manip.FindIKSolution(T_right_gripper, orpy.IkFilterOptions.CheckEnvCollisions))
 
-  myObject.SetRestingSurfaceTransform(T_table)
-  fmax = 100
-  mu = 0.5
-  res = intermediateplacement.ComputeFeasibleClosePlacements([left_robot, right_robot], [qgrasp_left, qgrasp_right], Lshape, Lshape.GetTransform(), T_table, fmax, mu, placementType=2, myObject=myObject)
+  left_robot.SetActiveDOFValues(left_manip.FindIKSolutions(T_left_gripper, orpy.IkFilterOptions.CheckEnvCollisions)[1])
 
+  right_robot.SetActiveDOFValues(right_manip.FindIKSolutions(T_right_gripper, orpy.IkFilterOptions.CheckEnvCollisions)[2])
 
+  left_taskmanip.CloseFingers()
+  left_robot.WaitForController(0)
+  right_taskmanip.CloseFingers()
+  right_robot.WaitForController(0)
+  ################## closed chain planning ###################
+
+  obj_translation_limits =  [[0.7, 0.5, 1.2], [-0.5, -0.5, 0]]
+  q_robots_start = [left_robot.GetActiveDOFValues(),
+                    right_robot.GetActiveDOFValues()]
+  q_robots_grasp = [left_robot.GetDOFValues()[-1],
+                    right_robot.GetDOFValues()[-1]]
+  qgrasps = [qgrasp_left, qgrasp_right]
+  T_obj_start = Lshape.GetTransform()
+  T_obj_goal = np.array([[ 0.   ,  1.   ,  0.   , -0.23],
+                         [ 1.   , -0.   ,  0.   ,  0.005],
+                         [ 0.   , -0.   , -1.   ,  0.159],
+                         [ 0.   ,  0.   ,  0.   ,  1.   ]])
+  q_robots_goal = utils.compute_bimanual_goal_configs(
+                    [left_robot, right_robot], Lshape, q_robots_start,
+                     q_robots_grasp, T_obj_start, T_obj_goal, seeds=[0,0])
+
+  p_Lshape = putils.create_placement_object(Lshape, env, T_rest=T_table)
+
+  embed()
+  exit(0)
+
+  import bimanual.planners.cc_planner_regrasp_placement as ccp 
+  ccplanner = ccp.CCPlanner(Lshape, p_Lshape, [left_robot, right_robot], 
+                            plan_regrasp=True, debug=False)
+  ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, 
+                        q_robots_goal, q_robots_grasp, qgrasps,
+                        T_obj_start, nn=2, step_size=0.5, 
+                        fmax=100, mu=0.5, regrasp_limit=1)
+  ccplanner.set_query(ccquery)
+  res = ccplanner.solve(timeout=30)
+
+  ccplanner.shortcut(ccquery, maxiters=[30, 60])
+  ccplanner.visualize_cctraj(ccquery.cctraj, speed=1)
 

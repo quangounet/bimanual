@@ -14,6 +14,7 @@ import traceback
 import TOPP
 from bimanual.utils.utils import colorize, reverse_traj
 from bimanual.utils import utils, heap, lie
+from pymanip.planningutils import myobject, intermediateplacement, staticequilibrium
 from IPython import embed
 
 # Global parameters
@@ -147,6 +148,57 @@ class BimanualRegraspTrajectory(object):
         new_bimanual_regrasp_traj.trajs[key] = orpy.planningutils.ReverseTrajectory(self.trajs[key])
     return new_bimanual_regrasp_traj
 
+
+class BimanualRegraspAction(object):
+  """
+  Class of regrasp trajectories of a bimanual setup.
+  """
+  def __init__(self, bimanual_wpts={'before': None, 'after': None},
+               rot_traj={'before': None, 'after': None},
+               rot_traj_reverse={'before': None, 'after': None},
+               translation_traj={'before': None, 'after': None},
+               timestamps={'before': None, 'after': None},
+               trajs={0: None, 1: None}, T_place=None, order=LR):
+    """
+    BimanualRegraspAction constructor.
+
+    @type trajs: dict
+    @param trajs: dict object stroing one regrasp traj for each robot.
+    @type order: int
+    @param order: Execution order of the regrasp trajs.
+    """
+    self.regrasp_traj     = BimanualRegraspTrajectory(trajs, order)
+    self.bimanual_wpts    = dict(bimanual_wpts)
+    self.rot_traj         = dict(rot_traj)
+    self.rot_traj_reverse = dict(rot_traj)
+    self.translation_traj = dict(translation_traj)
+    self.timestamps       = dict(timestamps)
+    self.T_place          = T_place
+
+  def reverse(self):
+    """
+    Reverse the stored bimanual regrasp trajectory.
+    """
+    new_action = BimanualRegraspAction()
+    new_action.regrasp_traj = self.regrasp_traj.reverse()
+    new_action.T_place = self.T_place
+    new_action.bimanual_wpts['before'] = \
+      [self.bimanual_wpts['after'][0][::-1],
+       self.bimanual_wpts['after'][1][::-1]]
+    new_action.bimanual_wpts['after'] = \
+      [self.bimanual_wpts['before'][0][::-1],
+       self.bimanual_wpts['before'][1][::-1]]
+    new_action.timestamps['before'] = self.timestamps['after']
+    new_action.timestamps['after'] = self.timestamps['before']
+    new_action.rot_traj['before'] = self.rot_traj_reverse['after']
+    new_action.rot_traj['after'] = self.rot_traj_reverse['before']
+    new_action.rot_traj_reverse['before'] = self.rot_traj['after']
+    new_action.rot_traj_reverse['after'] = self.rot_traj['before']
+    new_action.translation_traj['before'] = reverse_traj(self.translation_traj['after'])
+    new_action.translation_traj['after'] = reverse_traj(self.translation_traj['before'])
+
+    return new_action
+
 class CCVertex(object):  
   """
   Vertex of closed-chain motion. It stores all information required
@@ -176,7 +228,7 @@ class CCVertex(object):
     self.timestamps            = []
     self.level                 = 0
     self.contain_regrasp       = NOREGRASP
-    self.bimanual_regrasp_traj = None
+    self.bimanual_regrasp_action = None
     self.filled                = False
     self.type                  = None
 
@@ -188,11 +240,11 @@ class CCVertex(object):
       self.contain_regrasp = ENDREGRASP
       self.regrasp_count += 1
 
-  def _fill_regrasp_traj(self, bimanual_regrasp_traj):
+  def _fill_regrasp_action(self, bimanual_regrasp_action):
     """
     Add regrasp traj to a vertex containing regrasp action.
     """
-    self.bimanual_regrasp_traj = bimanual_regrasp_traj
+    self.bimanual_regrasp_action = bimanual_regrasp_action
     self.filled = True
 
 class CCVertexDatabase(object):
@@ -329,19 +381,36 @@ class CCTree(object):
     vertex = self.database[self.end_index]
     if self.treetype == FW:
       while vertex.parent_index is not None:
+        if vertex.contain_regrasp == ENDREGRASP:
+          rot_traj_list.append(vertex.bimanual_regrasp_action.rot_traj['after'])
+          rot_traj_list.append(vertex.bimanual_regrasp_action.rot_traj['before'])
+
         rot_traj_list.append(vertex.rot_traj)
+
+        if vertex.contain_regrasp == STARTREGRASP:
+          rot_traj_list.append(vertex.bimanual_regrasp_action.rot_traj['after'])
+          rot_traj_list.append(vertex.bimanual_regrasp_action.rot_traj['before'])
+
         vertex = self.database[vertex.parent_index]
       rot_traj_list.reverse()
     else:
       while vertex.parent_index is not None:
+        if vertex.contain_regrasp == ENDREGRASP:
+          rot_traj_list.append(vertex.bimanual_regrasp_action.rot_traj_reverse['after'])
+          rot_traj_list.append(vertex.bimanual_regrasp_action.rot_traj_reverse['before'])
+
         R_beg  = vertex.SE3_config_end.T[0:3, 0:3]
         R_end  = vertex.SE3_config_start.T[0:3, 0:3]
         qd_beg = vertex.SE3_config_end.qd * -1.0
         qd_end = vertex.SE3_config_start.qd * -1.0
-
         directed_rot_traj = lie.InterpolateSO3(R_beg, R_end, qd_beg, qd_end,
                                                vertex.rot_traj.duration)
         rot_traj_list.append(directed_rot_traj)
+
+        if vertex.contain_regrasp == STARTREGRASP:
+          rot_traj_list.append(vertex.bimanual_regrasp_action.rot_traj_reverse['after'])
+          rot_traj_list.append(vertex.bimanual_regrasp_action.rot_traj_reverse['before'])
+
         vertex = self.database[vertex.parent_index]
 
     return rot_traj_list
@@ -364,7 +433,17 @@ class CCTree(object):
     vertex = self.database[self.end_index]
     while vertex.parent_index is not None:
       rot_mat_list.append(vertex.SE3_config_end.T[0:3, 0:3])
+
+      if vertex.contain_regrasp == ENDREGRASP:
+        rot_mat_list.append(vertex.bimanual_regrasp_action.T_place[:3, :3])
+        rot_mat_list.append(vertex.SE3_config_end.T[0:3, 0:3])
+
+      if vertex.contain_regrasp == STARTREGRASP:
+        rot_mat_list.append(vertex.SE3_config_start.T[0:3, 0:3])
+        rot_mat_list.append(vertex.bimanual_regrasp_action.T_place[:3, :3])
+
       vertex = self.database[vertex.parent_index]
+
     rot_mat_list.append(vertex.SE3_config_end.T[0:3, 0:3])
 
     if self.treetype == FW:
@@ -390,13 +469,30 @@ class CCTree(object):
     vertex = self.database[self.end_index]
     if self.treetype == FW:
       while vertex.parent_index is not None:
+        if vertex.contain_regrasp == ENDREGRASP:
+          translation_traj_list.append(vertex.bimanual_regrasp_action.translation_traj['after'])
+          translation_traj_list.append(vertex.bimanual_regrasp_action.translation_traj['before'])
+
         translation_traj_list.append(vertex.translation_traj)
+
+        if vertex.contain_regrasp == STARTREGRASP:
+          translation_traj_list.append(vertex.bimanual_regrasp_action.translation_traj['after'])
+          translation_traj_list.append(vertex.bimanual_regrasp_action.translation_traj['before'])
+
         vertex = self.database[vertex.parent_index]
       translation_traj_list.reverse()
     else:
       while vertex.parent_index is not None:
-        directed_translation_traj = reverse_traj(vertex.translation_traj)
-        translation_traj_list.append(directed_translation_traj)
+        if vertex.contain_regrasp == ENDREGRASP:
+          translation_traj_list.append(reverse_traj(vertex.bimanual_regrasp_action.translation_traj['after']))
+          translation_traj_list.append(reverse_traj(vertex.bimanual_regrasp_action.translation_traj['before']))
+
+        translation_traj_list.append(reverse_traj(vertex.translation_traj))
+
+        if vertex.contain_regrasp == STARTREGRASP:
+          translation_traj_list.append(reverse_traj(vertex.bimanual_regrasp_action.translation_traj['after']))
+          translation_traj_list.append(reverse_traj(vertex.bimanual_regrasp_action.translation_traj['before']))
+
         vertex = self.database[vertex.parent_index]
 
     return translation_traj_list
@@ -420,22 +516,40 @@ class CCTree(object):
     if (self.treetype == FW):
       while (vertex.parent_index is not None):
         if vertex.contain_regrasp == ENDREGRASP:
-          bimanual_trajs.append(vertex.bimanual_regrasp_traj)
+          bimanual_trajs.append(vertex.bimanual_regrasp_action.bimanual_wpts['after'])
+          bimanual_trajs.append(vertex.bimanual_regrasp_action.regrasp_traj)
+          bimanual_trajs.append(vertex.bimanual_regrasp_action.bimanual_wpts['before'])
+
         bimanual_trajs.append(vertex.bimanual_wpts)
+
         if vertex.contain_regrasp == STARTREGRASP:
-          bimanual_trajs.append(vertex.bimanual_regrasp_traj)
+          bimanual_trajs.append(vertex.bimanual_regrasp_action.bimanual_wpts['after'])
+          bimanual_trajs.append(vertex.bimanual_regrasp_action.regrasp_traj)
+          bimanual_trajs.append(vertex.bimanual_regrasp_action.bimanual_wpts['before'])
         vertex = self.database[vertex.parent_index]
       bimanual_trajs.reverse()
     else:
       while (vertex.parent_index is not None):
         if vertex.contain_regrasp == ENDREGRASP:
-          bimanual_regrasp_traj = vertex.bimanual_regrasp_traj.reverse()
-          bimanual_trajs.append(bimanual_regrasp_traj)
+          bimanual_trajs.append(
+            [vertex.bimanual_regrasp_action.bimanual_wpts['after'][0][::-1],
+             vertex.bimanual_regrasp_action.bimanual_wpts['after'][1][::-1]])
+          bimanual_trajs.append(vertex.bimanual_regrasp_action.regrasp_traj.reverse())
+          bimanual_trajs.append(
+            [vertex.bimanual_regrasp_action.bimanual_wpts['before'][0][::-1],
+             vertex.bimanual_regrasp_action.bimanual_wpts['before'][1][::-1]])
+
         bimanual_trajs.append([vertex.bimanual_wpts[0][::-1],
                                vertex.bimanual_wpts[1][::-1]])
+
         if vertex.contain_regrasp == STARTREGRASP:
-          bimanual_regrasp_traj = vertex.bimanual_regrasp_traj.reverse()
-          bimanual_trajs.append(bimanual_regrasp_traj)
+          bimanual_trajs.append(
+            [vertex.bimanual_regrasp_action.bimanual_wpts['after'][0][::-1],
+             vertex.bimanual_regrasp_action.bimanual_wpts['after'][1][::-1]])
+          bimanual_trajs.append(vertex.bimanual_regrasp_action.regrasp_traj.reverse())
+          bimanual_trajs.append(
+            [vertex.bimanual_regrasp_action.bimanual_wpts['before'][0][::-1],
+             vertex.bimanual_regrasp_action.bimanual_wpts['before'][1][::-1]])
 
         vertex = self.database[vertex.parent_index]
 
@@ -458,7 +572,16 @@ class CCTree(object):
     
     vertex = self.database[self.end_index]
     while vertex.parent_index is not None:
+      if vertex.contain_regrasp == ENDREGRASP:
+        timestamps_list.append(vertex.bimanual_regrasp_action.timestamps['after'])
+        timestamps_list.append(vertex.bimanual_regrasp_action.timestamps['before'])
+
       timestamps_list.append(vertex.timestamps)
+
+      if vertex.contain_regrasp == STARTREGRASP:
+        timestamps_list.append(vertex.bimanual_regrasp_action.timestamps['after'])
+        timestamps_list.append(vertex.bimanual_regrasp_action.timestamps['before'])
+
       vertex = self.database[vertex.parent_index]
 
     if self.treetype == FW:
@@ -476,7 +599,7 @@ class CCQuery(object):
                q_robots_grasp, qgrasps, T_obj_start, T_obj_goal=None, nn=-1, 
                step_size=0.7, velocity_scale=1, interpolation_duration=None, 
                discr_timestep=5e-3, discr_check_timestep=None,
-               regrasp_limit=1):
+               fmax=100, mu=0.5, regrasp_limit=1):
     """
     CCQuery constructor. It is independent of robots to be planned since robot
     info will be stored in planner itself.
@@ -541,6 +664,8 @@ class CCQuery(object):
                                    SE3_config_end=SE3_config_goal)
     self.q_robots_grasp = q_robots_grasp
     self.qgrasps        = qgrasps
+    self.fmax           = fmax
+    self.mu             = mu
 
     # Initialize RRTs
     self.database               = CCVertexDatabase()
@@ -569,14 +694,14 @@ class CCQuery(object):
         / self.discr_check_timestep) * self.discr_check_timestep
 
     # traj information
-    self.connecting_dir                   = None
-    self.connecting_rot_traj              = None
-    self.connecting_translation_traj      = None
-    self.connecting_bimanual_wpts         = None
-    self.connecting_timestamps            = None
-    self.connecting_contain_endregrasp    = False
-    self.connecting_q_robots_inter        = None
-    self.connecting_bimanual_regrasp_traj = None
+    self.connecting_dir                     = None
+    self.connecting_rot_traj                = None
+    self.connecting_translation_traj        = None
+    self.connecting_bimanual_wpts           = None
+    self.connecting_timestamps              = None
+    self.connecting_contain_endregrasp      = False
+    self.connecting_q_robots_inter          = None
+    self.connecting_bimanual_regrasp_action = None
 
     self.rot_traj_list         = None
     self.rot_mat_list          = None
@@ -607,11 +732,19 @@ class CCQuery(object):
       raise CCPlannerException('Query not solved.')
       return
 
+    connect_action = self.connecting_bimanual_regrasp_action
+
     # Generate rot_traj_list
     self.rot_traj_list = self.tree_start.generate_rot_traj_list()
     if self.connecting_dir == BW:
       self.rot_traj_list.append(self.connecting_rot_traj)
+      if self.connecting_contain_endregrasp:
+        self.rot_traj_list.append(connect_action.rot_traj['before'])
+        self.rot_traj_list.append(connect_action.rot_traj['after'])
     else:
+      if self.connecting_contain_endregrasp:
+        self.rot_traj_list.append(connect_action.rot_traj_reverse['after'])
+        self.rot_traj_list.append(connect_action.rot_traj_reverse['before'])
       duration = self.connecting_rot_traj.duration
       R_beg  = self.database[self.tree_start.end_index].SE3_config_end.T[0:3, 0:3]
       R_end  = self.database[self.tree_end.end_index].SE3_config_end.T[0:3, 0:3]
@@ -624,6 +757,8 @@ class CCQuery(object):
 
     # Generate rot_mat_list
     self.rot_mat_list = self.tree_start.generate_rot_mat_list()
+    if self.connecting_contain_endregrasp:
+      self.rot_mat_list += [connect_action.T_place[:3, :3]]
     self.rot_mat_list += self.tree_end.generate_rot_mat_list()
 
     # Combine rot_traj_list and rot_mat_list to generate lie_traj
@@ -639,14 +774,21 @@ class CCQuery(object):
       raise CCPlannerException('Query not solved.')
       return
 
+    connect_action = self.connecting_bimanual_regrasp_action
+
     # Generate translation_traj_list
     self.translation_traj_list = self.tree_start.generate_translation_traj_list()
     if self.connecting_dir == BW:
       self.translation_traj_list.append(self.connecting_translation_traj)
+      if self.connecting_contain_endregrasp:
+        self.translation_traj_list.append(connect_action.translation_traj['before'])
+        self.translation_traj_list.append(connect_action.translation_traj['after'])
     else:
-      connecting_translation_traj = reverse_traj(
-        self.connecting_translation_traj)
-      self.translation_traj_list.append(connecting_translation_traj)
+      if self.connecting_contain_endregrasp:
+        self.translation_traj_list.append(reverse_traj(connect_action.translation_traj['after']))
+        self.translation_traj_list.append(reverse_traj(connect_action.translation_traj['before']))
+      self.translation_traj_list.append(reverse_traj(
+        self.connecting_translation_traj))
     self.translation_traj_list += self.tree_end.generate_translation_traj_list()
 
     # Convert translation_traj_list to translation_traj
@@ -660,15 +802,25 @@ class CCQuery(object):
     if not self.solved:
       raise CCPlannerException('Query not solved.')
       return
+
+    connect_action = self.connecting_bimanual_regrasp_action
     
     bimanual_trajs = self.tree_start.generate_bimanual_trajs()
     if self.connecting_dir == BW:
       bimanual_trajs.append(self.connecting_bimanual_wpts)
       if self.connecting_contain_endregrasp:
-        bimanual_trajs.append(self.connecting_bimanual_regrasp_traj)
+        bimanual_trajs.append(connect_action.bimanual_wpts['before'])
+        bimanual_trajs.append(connect_action.regrasp_traj)
+        bimanual_trajs.append(connect_action.bimanual_wpts['after'])
     else:
       if self.connecting_contain_endregrasp:
-        bimanual_trajs.append(self.connecting_bimanual_regrasp_traj.reverse())
+        bimanual_trajs.append(
+          [connect_action.bimanual_wpts['after'][0][::-1],
+           connect_action.bimanual_wpts['after'][0][::-1]])
+        bimanual_trajs.append(connect_action.regrasp_traj.reverse())
+        bimanual_trajs.append(
+          [connect_action.bimanual_wpts['before'][0][::-1],
+           connect_action.bimanual_wpts['before'][0][::-1]])
       bimanual_trajs.append([self.connecting_bimanual_wpts[0][::-1],
                              self.connecting_bimanual_wpts[1][::-1]])
     bimanual_trajs += self.tree_end.generate_bimanual_trajs()
@@ -684,9 +836,21 @@ class CCQuery(object):
       raise CCPlannerException('Query not solved.')
       return
 
+    connect_action = self.connecting_bimanual_regrasp_action
+
     timestamps_list = self.tree_start.generate_timestamps_list()
-    if (self.connecting_timestamps is not None):
+
+    if self.connecting_dir == BW:
       timestamps_list.append(self.connecting_timestamps)
+      if self.connecting_contain_endregrasp:
+        bimanual_trajs.append(connect_action.timestamps['before'])
+        bimanual_trajs.append(connect_action.timestamps['after'])
+    else:
+      if self.connecting_contain_endregrasp:
+        bimanual_trajs.append(connect_action.timestamps['after'])
+        bimanual_trajs.append(connect_action.timestamps['before'])
+      timestamps_list.append(self.connecting_timestamps)
+
     timestamps_list += self.tree_end.generate_timestamps_list()
 
     self.timestamps = utils.merge_timestamps_list(timestamps_list)
@@ -963,6 +1127,70 @@ class CCPlanner(object):
 
     self.reset_config(query)
 
+  def _move_to_placement(self, SE3_config_start, SE3_config_place,
+                         q_robots_start):
+    """
+    Extend the tree(s) in C{self._query} towards the given SE3 config.
+
+    @type  SE3_config: SE3Config
+    @param SE3_config: Configuration towards which the tree will be extended.
+
+    @rtype:  int
+    @return: Result of this extension attempt. Possible values:
+             -  B{TRAPPED}:  when the extension fails
+             -  B{REACHED}:  when the extension reaches the given config
+             -  B{ADVANCED}: when the tree is extended towards the given
+                             config
+    """
+    query = self._query
+
+    q_beg  = SE3_config_start.q
+    qd_beg = SE3_config_start.qd
+    p_beg  = SE3_config_start.p
+    pd_beg = SE3_config_start.pd
+
+    q_end = SE3_config_place.q
+    p_end = SE3_config_place.p
+    qd_end = SE3_config_place.qd
+    pd_end = SE3_config_place.pd
+
+      
+    # Interpolate a SE3 trajectory for the object
+    R_beg = orpy.rotationMatrixFromQuat(q_beg)
+    R_end = orpy.rotationMatrixFromQuat(q_end)
+    rot_traj = lie.InterpolateSO3(R_beg, R_end, qd_beg, qd_end,
+                                  query.interpolation_duration)
+    rot_traj_reverse = lie.InterpolateSO3(R_end, R_beg, qd_end, qd_beg,
+                                          query.interpolation_duration)
+    translation_traj_str = utils.traj_str_3rd_degree(p_beg, p_end, pd_beg, pd_end, query.interpolation_duration)
+    translation_traj = TrajectoryFromStr(translation_traj_str)
+
+    # Check collision (object trajectory)
+    res = self.is_collision_free_SE3_traj(rot_traj, translation_traj, R_beg)
+    if not res:
+      self._output_debug('TRAPPED : SE(3) trajectory in collision', 
+                         bold=False)
+      return False,
+      
+    # Check reachability (object trajectory)
+    res = self.check_SE3_traj_reachability(lie.LieTraj([R_beg, R_end],
+            [rot_traj]), translation_traj, q_robots_start)
+    if res[0] is False:
+      passed, bimanual_wpts, timestamps = res[1:]
+      if not passed:
+        self._output_debug('TRAPPED : SE(3) trajectory not reachable', 
+                           bold=False)
+        return False,
+
+      # Now this trajectory is alright.
+      self._output_debug('Move to placement successful', 
+                         color='green', bold=False)
+      new_q_robots = [wpts[-1] for wpts in bimanual_wpts] 
+
+      return True, bimanual_wpts, timestamps, rot_traj, rot_traj_reverse,translation_traj
+    else:
+      return False,
+
   def _plan_regrasp_trajs(self):
     self._output_info('Global path found.', 'yellow')
     t_begin = time()
@@ -988,36 +1216,96 @@ class CCPlanner(object):
             continue
           self._output_info('Planning regrasp no.[{0}] for [{1}] tree...'.format(regrasp_count, ['FW', 'BW'][tree_type]), 'yellow')
 
-          bimanual_regrasp_traj = BimanualRegraspTrajectory()
+          bimanual_regrasp_action = BimanualRegraspAction()
           if vertex.contain_regrasp == ENDREGRASP:
+            q_robots_efo = [robot.GetDOFValues()[-1] for robot in self.robots]
+
+            T_place = intermediateplacement.ComputeFeasibleClosePlacements(
+              self.robots, query.qgrasps, query.q_robots_grasp, q_robots_efo, 
+              self.obj, vertex.SE3_config_end.T, query.fmax, query.mu, 
+              self.pobj, placementType=2)
+            if T_place is None:
+              self._output_info('No valid placement, reforming trees...', 
+                                'red')
+              query.regrasp_T_blacklist[0].append(vertex.SE3_config_end.T)
+              query.regrasp_T_blacklist[1].append(vertex.SE3_config_end.T)
+              self._reform_trees(tree_type, spine_indices[index_i:])
+              return False
+            bimanual_regrasp_action.T_place = np.array(T_place)
+
+            SE3_config_place = SE3Config.from_matrix(T_place)
+
+            # wpts traj before placement
+            res = self._move_to_placement(vertex.SE3_config_end, 
+                                          SE3_config_place, 
+                                          vertex.q_robots_inter)
+            if len(res) == 1: # move to placement failed
+              self._output_info('Cannot move to placement,'
+                                ' reforming trees...', 'red')
+              query.regrasp_T_blacklist[0].append(vertex.SE3_config_end.T)
+              query.regrasp_T_blacklist[1].append(vertex.SE3_config_end.T)
+              self._reform_trees(tree_type, spine_indices[index_i:])
+              return False
+            bimanual_regrasp_action.bimanual_wpts['before'] = res[1]
+            bimanual_regrasp_action.timestamps['before'] = res[2]
+            bimanual_regrasp_action.rot_traj['before'] = res[3]
+            bimanual_regrasp_action.rot_traj_reverse['before'] = res[4]
+            bimanual_regrasp_action.translation_traj['before'] = res[5]
+
+
+            # wpts traj after placement
+            res = self._move_to_placement(vertex.SE3_config_end, 
+                                          SE3_config_place, 
+                                          vertex.q_robots_end)
+            if len(res) == 1: # move to placement failed
+              self._output_info('Cannot move back from placement,'
+                                ' reforming trees...', 'red')
+              query.regrasp_T_blacklist[0].append(vertex.SE3_config_end.T)
+              query.regrasp_T_blacklist[1].append(vertex.SE3_config_end.T)
+              self._reform_trees(tree_type, spine_indices[index_i:])
+              return False
+            bimanual_regrasp_action.bimanual_wpts['after'] = [res[1][0][::-1],                                                res[1][1][::-1]]
+            bimanual_regrasp_action.timestamps['after'] = res[2]
+            bimanual_regrasp_action.rot_traj['after'] = res[4]
+            bimanual_regrasp_action.rot_traj_reverse['after'] = res[3]
+            bimanual_regrasp_action.translation_traj['after'] = reverse_traj(res[5])
+
+            q_robots_before_regrasp = [
+              bimanual_regrasp_action.bimanual_wpts['before'][0][-1],
+              bimanual_regrasp_action.bimanual_wpts['before'][1][-1]]
+            q_robots_after_regrasp = [
+              bimanual_regrasp_action.bimanual_wpts['after'][0][0],
+              bimanual_regrasp_action.bimanual_wpts['after'][1][0]]
+
             # position everything correctly 
-            self.obj.SetTransform(vertex.SE3_config_end.T)
-            for robot, q_robot_inter in zip(self.robots,
-                                            vertex.q_robots_inter):
-              robot.SetActiveDOFValues(q_robot_inter)
-            # start planning
+            self.obj.SetTransform(T_place)
+            for robot, q_before in zip(self.robots,
+                                       q_robots_before_regrasp):
+              robot.SetActiveDOFValues(q_before)
+            # plan regrasp
             for i in xrange(self._nrobots):
-              q_robot_inter = vertex.q_robots_inter[i]
-              q_robot_end   = vertex.q_robots_end[i]
-              if not np.isclose(q_robot_inter, q_robot_end, rtol=1e-3).all():
+              q_before = q_robots_before_regrasp[i]
+              q_after = q_robots_after_regrasp[i]
+              if not np.isclose(q_before, q_after, rtol=1e-3).all():
                 robot = self.robots[i]
-                robot.SetDOFValues([0], [self._ndof])
+                robot.SetDOFValues([0], [self._ndof]) # open gripper
                 if self._plan_regrasp:
                   params = orpy.Planner.PlannerParameters()
                   params.SetRobotActiveJoints(robot)
-                  params.SetGoalConfig(q_robot_end)
+                  params.SetGoalConfig(q_after)
                   params.SetExtraParameters(
                     """
                     <_nmaxiterations>300</_nmaxiterations>
-                    <_postprocessing></_postprocessing>
-                  """)
+                    <_postprocessing planner="linearsmoother">
+                    <_nmaxiterations>1</_nmaxiterations></_postprocessing>
+                    """)
                   self.rave_planner.InitPlan(robot, params)
                   traj = orpy.RaveCreateTrajectory(self.env, '')
 
                   if self.rave_planner.PlanPath(traj) == HAS_SOLUTION:
                     # print colorize('{0}'.format(self._is_bad_regrasp_T([i], vertex.SE3_config_end.T)),'green')
-                    bimanual_regrasp_traj.trajs[i] = traj
-                    robot.SetActiveDOFValues(q_robot_end)
+                    bimanual_regrasp_action.regrasp_traj.trajs[i] = traj
+                    robot.SetActiveDOFValues(q_after)
                     self.loose_gripper(query, [i])
                   else:
                     self._output_info('Planning failed, reforming trees...', 
@@ -1028,34 +1316,104 @@ class CCPlanner(object):
                     self.loose_gripper(query)
                     self._reform_trees(tree_type, spine_indices[index_i:])
                     return False
+
           elif vertex.contain_regrasp == STARTREGRASP:
+            q_robots_efo = [robot.GetDOFValues()[-1] for robot in self.robots]
+
+            place_count = 20
+            perturb_first = False
+            for i in xrange(place_count):
+              if i > 0:
+                perturb_first = True
+              print i
+              T_place = intermediateplacement.ComputeFeasibleClosePlacements(
+                self.robots, query.qgrasps, query.q_robots_grasp, 
+                q_robots_efo, self.obj, vertex.SE3_config_start.T,
+                query.fmax, query.mu, self.pobj, placementType=2,
+                perturb_first=perturb_first)
+              if T_place is not None:
+                break
+
+            if T_place is None:
+              self._output_info('No valid placement, reforming trees...', 
+                                'red')
+              query.regrasp_T_blacklist[0].append(vertex.SE3_config_start.T)
+              query.regrasp_T_blacklist[1].append(vertex.SE3_config_start.T)
+              self._reform_trees(tree_type, spine_indices[index_i:])
+              return False
+            bimanual_regrasp_action.T_place = np.array(T_place)
+
+            SE3_config_place = SE3Config.from_matrix(T_place)
+
+            # wpts traj before placement
+            res = self._move_to_placement(vertex.SE3_config_start, 
+                                          SE3_config_place, 
+                                          vertex.q_robots_start)
+            if len(res) == 1: # move to placement failed
+              self._output_info('Cannot move to placement,'
+                                ' reforming trees...', 'red')
+              query.regrasp_T_blacklist[0].append(vertex.SE3_config_start.T)
+              query.regrasp_T_blacklist[1].append(vertex.SE3_config_start.T)
+              self._reform_trees(tree_type, spine_indices[index_i:])
+              return False
+            bimanual_regrasp_action.bimanual_wpts['before'] = res[1]
+            bimanual_regrasp_action.timestamps['before'] = res[2]
+            bimanual_regrasp_action.rot_traj['before'] = res[3]
+            bimanual_regrasp_action.rot_traj_reverse['before'] = res[4]
+            bimanual_regrasp_action.translation_traj['before'] = res[5]
+
+            # wpts traj after placement
+            res = self._move_to_placement(vertex.SE3_config_end, 
+                                          SE3_config_place, 
+                                          vertex.q_robots_inter)
+            if len(res) == 1: # move to placement failed
+              self._output_info('Cannot move back from placement,'
+                                ' reforming trees...', 'red')
+              query.regrasp_T_blacklist[0].append(vertex.SE3_config_start.T)
+              query.regrasp_T_blacklist[1].append(vertex.SE3_config_start.T)
+              self._reform_trees(tree_type, spine_indices[index_i:])
+              return False
+            bimanual_regrasp_action.bimanual_wpts['after'] = [res[1][0][::-1],                                                res[1][1][::-1]]
+            bimanual_regrasp_action.timestamps['after'] = res[2]
+            bimanual_regrasp_action.rot_traj['after'] = res[4]
+            bimanual_regrasp_action.rot_traj_reverse['after'] = res[3]
+            bimanual_regrasp_action.translation_traj['after'] = reverse_traj(res[5])
+
+            q_robots_before_regrasp = [
+              bimanual_regrasp_action.bimanual_wpts['before'][0][-1],
+              bimanual_regrasp_action.bimanual_wpts['before'][1][-1]]
+            q_robots_after_regrasp = [
+              bimanual_regrasp_action.bimanual_wpts['after'][0][0],
+              bimanual_regrasp_action.bimanual_wpts['after'][1][0]]
+
             # position everything correctly 
-            self.obj.SetTransform(vertex.SE3_config_start.T)
-            for robot, q_robot_start in zip(self.robots,
-                                            vertex.q_robots_start):
-              robot.SetActiveDOFValues(q_robot_start)
-            # start planning
+            self.obj.SetTransform(T_place)
+            for robot, q_before in zip(self.robots,
+                                       q_robots_before_regrasp):
+              robot.SetActiveDOFValues(q_before)
+            # plan regrasp
             for i in xrange(self._nrobots):
-              q_robot_start = vertex.q_robots_start[i]
-              q_robot_inter = vertex.q_robots_inter[i]
-              if not np.isclose(q_robot_start,q_robot_inter,rtol=1e-3).all():
+              q_before = q_robots_before_regrasp[i]
+              q_after = q_robots_after_regrasp[i]
+              if not np.isclose(q_before, q_after, rtol=1e-3).all():
                 robot = self.robots[i]
                 robot.SetDOFValues([0], [self._ndof])
                 if self._plan_regrasp:
                   params = orpy.Planner.PlannerParameters()
                   params.SetRobotActiveJoints(robot)
-                  params.SetGoalConfig(q_robot_inter)
+                  params.SetGoalConfig(q_after)
                   params.SetExtraParameters(
                     """
                     <_nmaxiterations>300</_nmaxiterations>
-                    <_postprocessing></_postprocessing>
-                  """)
+                    <_postprocessing planner="linearsmoother">
+                    <_nmaxiterations>1</_nmaxiterations></_postprocessing>
+                    """)
                   self.rave_planner.InitPlan(robot, params)
                   traj = orpy.RaveCreateTrajectory(self.env, '')
                   if self.rave_planner.PlanPath(traj) == HAS_SOLUTION:
                     # print colorize('{0}'.format(self._is_bad_regrasp_T([i], vertex.SE3_config_start.T)),'green')
-                    bimanual_regrasp_traj.trajs[i] = traj
-                    robot.SetActiveDOFValues(q_robot_inter)
+                    bimanual_regrasp_action.regrasp_traj.trajs[i] = traj
+                    robot.SetActiveDOFValues(q_after)
                     self.loose_gripper(query, [i])
                   else:
                     self._output_info('Planning failed, reforming trees...', 
@@ -1067,51 +1425,106 @@ class CCPlanner(object):
                     self._reform_trees(tree_type, spine_indices[index_i:])
                     return False
                     
-          vertex._fill_regrasp_traj(bimanual_regrasp_traj)
+          vertex._fill_regrasp_action(bimanual_regrasp_action)
 
     # connecting link
     if query.connecting_contain_endregrasp:
       regrasp_count += 1
       self._output_info('Planning regrasp no.[{0}] for [connecting]'\
                         .format(regrasp_count), 'yellow')
-      bimanual_regrasp_traj = BimanualRegraspTrajectory()
+      bimanual_regrasp_action = BimanualRegraspAction()
       if query.connecting_dir == FW:
         v_goal = query.database[query.tree_start.end_index]
       else: # query.connecting_dir == BW
         v_goal = query.database[query.tree_end.end_index]
+
+      q_robots_efo = [robot.GetDOFValues()[-1] for robot in self.robots]
+
+      T_place = intermediateplacement.ComputeFeasibleClosePlacements(
+        self.robots, query.qgrasps, query.q_robots_grasp, q_robots_efo, 
+        self.obj, v_goal.SE3_config_end.T, query.fmax, query.mu, 
+        self.pobj, placementType=2)
+      if T_place is None:
+        self._output_info('No valid placement', 'red')
+        return False
+      bimanual_regrasp_action.T_place = np.array(T_place)
+
+      SE3_config_place = SE3Config.from_matrix(T_place)
+
+      # wpts traj before placement
+      res = self._move_to_placement(v_goal.SE3_config_end, 
+                                    SE3_config_place, 
+                                    query.connecting_q_robots_inter)
+      if len(res) == 1: # move to placement failed
+        self._output_info('Cannot move to placement', 'red')
+        query.regrasp_T_blacklist[0].append(v_goal.SE3_config_end.T)
+        query.regrasp_T_blacklist[1].append(v_goal.SE3_config_end.T)
+        return False
+
+      bimanual_regrasp_action.bimanual_wpts['before'] = res[1]
+      bimanual_regrasp_action.timestamps['before'] = res[2]
+      bimanual_regrasp_action.rot_traj['before'] = res[3]
+      bimanual_regrasp_action.rot_traj_reverse['before'] = res[4]
+      bimanual_regrasp_action.translation_traj['before'] = res[5]
+      
+      # wpts traj after placement
+      res = self._move_to_placement(v_goal.SE3_config_end, 
+                                    SE3_config_place, 
+                                    v_goal.q_robots_end)
+      if len(res) == 1: # move to placement failed
+        self._output_info('Cannot move back from placement,', 'red')
+        query.regrasp_T_blacklist[0].append(v_goal.SE3_config_end.T)
+        query.regrasp_T_blacklist[1].append(v_goal.SE3_config_end.T)
+        return False
+      bimanual_regrasp_action.bimanual_wpts['after'] = [res[1][0][::-1], 
+                                                        res[1][1][::-1]]
+      bimanual_regrasp_action.timestamps['after'] = res[2]
+      bimanual_regrasp_action.rot_traj['after'] = res[4]
+      bimanual_regrasp_action.rot_traj_reverse['after'] = res[3]
+      bimanual_regrasp_action.translation_traj['after'] = reverse_traj(res[5])
+
+      q_robots_before_regrasp = [
+        bimanual_regrasp_action.bimanual_wpts['before'][0][-1],
+        bimanual_regrasp_action.bimanual_wpts['before'][1][-1]]
+      q_robots_after_regrasp = [
+        bimanual_regrasp_action.bimanual_wpts['after'][0][0],
+        bimanual_regrasp_action.bimanual_wpts['after'][1][0]]
+
       # position everything correctly 
-      self.obj.SetTransform(v_goal.SE3_config_end.T)
-      for robot, q_robot_inter in zip(self.robots, 
-                                      query.connecting_q_robots_inter):
-        robot.SetActiveDOFValues(q_robot_inter)
-      # start planning
+      self.obj.SetTransform(T_place)
+      for robot, q_before in zip(self.robots, 
+                                 q_robots_before_regrasp):
+        robot.SetActiveDOFValues(q_before)
+      # plan regrasp
       for i in xrange(self._nrobots):
-        q_robot_inter = query.connecting_q_robots_inter[i]
-        q_robot_end = v_goal.q_robots_end[i]
-        if not np.isclose(q_robot_inter, q_robot_end, rtol=1e-3).all():
+        q_before = q_robots_before_regrasp[i]
+        q_after = q_robots_after_regrasp[i]
+        if not np.isclose(q_before, q_after, rtol=1e-3).all():
           robot = self.robots[i]
           robot.SetDOFValues([0], [self._ndof])
           if self._plan_regrasp:
             params = orpy.Planner.PlannerParameters()
             params.SetRobotActiveJoints(robot)
-            params.SetGoalConfig(q_robot_end)
+            params.SetGoalConfig(q_after)
             params.SetExtraParameters(
               """
               <_nmaxiterations>300</_nmaxiterations>
-              <_postprocessing></_postprocessing>
-            """)
+              <_postprocessing planner="linearsmoother">
+              <_nmaxiterations>1</_nmaxiterations></_postprocessing>
+              """)
             self.rave_planner.InitPlan(robot, params)
             traj = orpy.RaveCreateTrajectory(self.env, '')
             if self.rave_planner.PlanPath(traj) == HAS_SOLUTION:
-              bimanual_regrasp_traj.trajs[i] = traj
-              robot.SetActiveDOFValues(q_robot_end)
+              bimanual_regrasp_action.regrasp_traj.trajs[i] = traj
+              robot.SetActiveDOFValues(q_after)
               self.loose_gripper(query, [i])
             else:
               self._output_info('Planning failed', 'red')
+              query.regrasp_T_blacklist[i].append(v_goal.SE3_config_end.T)
               self.loose_gripper(query)
               return False
 
-      query.connecting_bimanual_regrasp_traj = bimanual_regrasp_traj
+      query.connecting_bimanual_regrasp_action = bimanual_regrasp_action
 
     query.regrasp_planning_time += time() - t_begin
     return True
@@ -1610,7 +2023,7 @@ class CCPlanner(object):
     for robot_index in robot_indices:
       for T in self._query.regrasp_T_blacklist[robot_index]:
         if utils.SE3_distance(T, T_obj_regrasp, 
-                              1.0 / np.pi, 1.0) < self._query.step_size/2.0:
+                              1.0 / np.pi, 1.0) < self._query.step_size/4.0:
           self._output_info('Attempt to add regrasp but at bad T.',
                              bold=False)
           return True
@@ -1753,11 +2166,7 @@ class CCPlanner(object):
                                     v.regrasp_count <= regrasp_count_limit)])
     distance_list = [utils.SE3_distance(SE3_config.T, v.SE3_config_end.T, 
                       1.0 / np.pi, 1.0) for v in cur_tree_vertices]
-    try:
-      distance_heap = heap.Heap(distance_list)
-    except:
-      print 'hahaha finally'
-      embed()
+    distance_heap = heap.Heap(distance_list)
         
     if (self._query.nn == -1):
       # to consider all vertices in the tree as nearest neighbors

@@ -1192,6 +1192,7 @@ class CCPlanner(object):
       return False,
 
   def _plan_regrasp_trajs(self):
+    N_max = 1
     self._output_info('Global path found.', 'yellow')
     t_begin = time()
     query = self._query
@@ -1219,211 +1220,382 @@ class CCPlanner(object):
           bimanual_regrasp_action = BimanualRegraspAction()
           if vertex.contain_regrasp == ENDREGRASP:
             q_robots_efo = [robot.GetDOFValues()[-1] for robot in self.robots]
+            for trial_iter in xrange(N_max):
+              if trial_iter < N_max-1:
+                T_place = intermediateplacement.ComputeFeasibleClosePlacements(
+                  self.robots, query.qgrasps, query.q_robots_grasp, q_robots_efo, 
+                  self.obj, vertex.SE3_config_end.T, query.fmax, query.mu, 
+                  self.pobj, placementType=2, perturb_first=True)
+                if T_place is None:
+                  self._output_info('No valid placement, ',
+                                    'try next...', 'red')
+                  continue
+                bimanual_regrasp_action.T_place = np.array(T_place)
 
-            T_place = intermediateplacement.ComputeFeasibleClosePlacements(
-              self.robots, query.qgrasps, query.q_robots_grasp, q_robots_efo, 
-              self.obj, vertex.SE3_config_end.T, query.fmax, query.mu, 
-              self.pobj, placementType=2)
-            if T_place is None:
-              self._output_info('No valid placement, reforming trees...', 
-                                'red')
-              query.regrasp_T_blacklist[0].append(vertex.SE3_config_end.T)
-              query.regrasp_T_blacklist[1].append(vertex.SE3_config_end.T)
-              self._reform_trees(tree_type, spine_indices[index_i:])
-              return False
-            bimanual_regrasp_action.T_place = np.array(T_place)
+                SE3_config_place = SE3Config.from_matrix(T_place)
 
-            SE3_config_place = SE3Config.from_matrix(T_place)
+                # wpts traj before placement
+                res = self._move_to_placement(vertex.SE3_config_end, 
+                                              SE3_config_place, 
+                                              vertex.q_robots_inter)
+                if len(res) == 1: # move to placement failed
+                  self._output_info('Cannot move to placement,'
+                                    ' try next...', 'red')
+                  continue
+                bimanual_regrasp_action.bimanual_wpts['before'] = res[1]
+                bimanual_regrasp_action.timestamps['before'] = res[2]
+                bimanual_regrasp_action.rot_traj['before'] = res[3]
+                bimanual_regrasp_action.rot_traj_reverse['before'] = res[4]
+                bimanual_regrasp_action.translation_traj['before'] = res[5]
 
-            # wpts traj before placement
-            res = self._move_to_placement(vertex.SE3_config_end, 
-                                          SE3_config_place, 
-                                          vertex.q_robots_inter)
-            if len(res) == 1: # move to placement failed
-              self._output_info('Cannot move to placement,'
-                                ' reforming trees...', 'red')
-              query.regrasp_T_blacklist[0].append(vertex.SE3_config_end.T)
-              query.regrasp_T_blacklist[1].append(vertex.SE3_config_end.T)
-              self._reform_trees(tree_type, spine_indices[index_i:])
-              return False
-            bimanual_regrasp_action.bimanual_wpts['before'] = res[1]
-            bimanual_regrasp_action.timestamps['before'] = res[2]
-            bimanual_regrasp_action.rot_traj['before'] = res[3]
-            bimanual_regrasp_action.rot_traj_reverse['before'] = res[4]
-            bimanual_regrasp_action.translation_traj['before'] = res[5]
+                # wpts traj after placement
+                res = self._move_to_placement(vertex.SE3_config_end, 
+                                              SE3_config_place, 
+                                              vertex.q_robots_end)
+                if len(res) == 1: # move to placement failed
+                  self._output_info('Cannot move back from placement,'
+                                    ' try next...', 'red')
+                  continue
+                bimanual_regrasp_action.bimanual_wpts['after'] = [res[1][0][::-1],                                                res[1][1][::-1]]
+                bimanual_regrasp_action.timestamps['after'] = res[2]
+                bimanual_regrasp_action.rot_traj['after'] = res[4]
+                bimanual_regrasp_action.rot_traj_reverse['after'] = res[3]
+                bimanual_regrasp_action.translation_traj['after'] = reverse_traj(res[5])
+
+                q_robots_before_regrasp = [
+                  bimanual_regrasp_action.bimanual_wpts['before'][0][-1],
+                  bimanual_regrasp_action.bimanual_wpts['before'][1][-1]]
+                q_robots_after_regrasp = [
+                  bimanual_regrasp_action.bimanual_wpts['after'][0][0],
+                  bimanual_regrasp_action.bimanual_wpts['after'][1][0]]
+
+                # position everything correctly 
+                self.obj.SetTransform(T_place)
+                for robot, q_before in zip(self.robots,
+                                           q_robots_before_regrasp):
+                  robot.SetActiveDOFValues(q_before)
+                # plan regrasp
+                for i in xrange(self._nrobots):
+                  q_before = q_robots_before_regrasp[i]
+                  q_after = q_robots_after_regrasp[i]
+                  if not np.isclose(q_before, q_after, rtol=1e-3).all():
+                    robot = self.robots[i]
+                    robot.SetDOFValues([0], [self._ndof]) # open gripper
+                    if self._plan_regrasp:
+                      params = orpy.Planner.PlannerParameters()
+                      params.SetRobotActiveJoints(robot)
+                      params.SetGoalConfig(q_after)
+                      params.SetExtraParameters(
+                        """
+                        <_nmaxiterations>300</_nmaxiterations>
+                        <_postprocessing planner="linearsmoother">
+                        <_nmaxiterations>1</_nmaxiterations></_postprocessing>
+                        """)
+                      self.rave_planner.InitPlan(robot, params)
+                      traj = orpy.RaveCreateTrajectory(self.env, '')
+
+                      if self.rave_planner.PlanPath(traj) == HAS_SOLUTION:
+                        # print colorize('{0}'.format(self._is_bad_regrasp_T([i], vertex.SE3_config_end.T)),'green')
+                        bimanual_regrasp_action.regrasp_traj.trajs[i] = traj
+                        robot.SetActiveDOFValues(q_after)
+                        self.loose_gripper(query, [i])
+                      else:
+                        self._output_info('Planning failed, reforming trees...', 
+                                          'red')
+                        # print colorize('{0}'.format(self._is_bad_regrasp_T([i], vertex.SE3_config_end.T)),'red')
+                        query.regrasp_T_blacklist[i].append(vertex.SE3_config_end.T)
+                        self._output_info('index: {0}'.format(index), 'red')
+                        self.loose_gripper(query)
+                        self._reform_trees(tree_type, spine_indices[index_i:])
+                        return False
+              else:
+                T_place = intermediateplacement.ComputeFeasibleClosePlacements(
+                  self.robots, query.qgrasps, query.q_robots_grasp, q_robots_efo, 
+                  self.obj, vertex.SE3_config_end.T, query.fmax, query.mu, 
+                  self.pobj, placementType=2, perturb_first=True)
+                if T_place is None:
+                  self._output_info('No valid placement, reforming trees...', 
+                                    'red')
+                  query.regrasp_T_blacklist[0].append(vertex.SE3_config_end.T)
+                  query.regrasp_T_blacklist[1].append(vertex.SE3_config_end.T)
+                  self._reform_trees(tree_type, spine_indices[index_i:])
+                  return False
+                bimanual_regrasp_action.T_place = np.array(T_place)
+
+                SE3_config_place = SE3Config.from_matrix(T_place)
+
+                # wpts traj before placement
+                res = self._move_to_placement(vertex.SE3_config_end, 
+                                              SE3_config_place, 
+                                              vertex.q_robots_inter)
+                if len(res) == 1: # move to placement failed
+                  self._output_info('Cannot move to placement,'
+                                    ' reforming trees...', 'red')
+                  query.regrasp_T_blacklist[0].append(vertex.SE3_config_end.T)
+                  query.regrasp_T_blacklist[1].append(vertex.SE3_config_end.T)
+                  self._reform_trees(tree_type, spine_indices[index_i:])
+                  return False
+                bimanual_regrasp_action.bimanual_wpts['before'] = res[1]
+                bimanual_regrasp_action.timestamps['before'] = res[2]
+                bimanual_regrasp_action.rot_traj['before'] = res[3]
+                bimanual_regrasp_action.rot_traj_reverse['before'] = res[4]
+                bimanual_regrasp_action.translation_traj['before'] = res[5]
 
 
-            # wpts traj after placement
-            res = self._move_to_placement(vertex.SE3_config_end, 
-                                          SE3_config_place, 
-                                          vertex.q_robots_end)
-            if len(res) == 1: # move to placement failed
-              self._output_info('Cannot move back from placement,'
-                                ' reforming trees...', 'red')
-              query.regrasp_T_blacklist[0].append(vertex.SE3_config_end.T)
-              query.regrasp_T_blacklist[1].append(vertex.SE3_config_end.T)
-              self._reform_trees(tree_type, spine_indices[index_i:])
-              return False
-            bimanual_regrasp_action.bimanual_wpts['after'] = [res[1][0][::-1],                                                res[1][1][::-1]]
-            bimanual_regrasp_action.timestamps['after'] = res[2]
-            bimanual_regrasp_action.rot_traj['after'] = res[4]
-            bimanual_regrasp_action.rot_traj_reverse['after'] = res[3]
-            bimanual_regrasp_action.translation_traj['after'] = reverse_traj(res[5])
+                # wpts traj after placement
+                res = self._move_to_placement(vertex.SE3_config_end, 
+                                              SE3_config_place, 
+                                              vertex.q_robots_end)
+                if len(res) == 1: # move to placement failed
+                  self._output_info('Cannot move back from placement,'
+                                    ' reforming trees...', 'red')
+                  query.regrasp_T_blacklist[0].append(vertex.SE3_config_end.T)
+                  query.regrasp_T_blacklist[1].append(vertex.SE3_config_end.T)
+                  self._reform_trees(tree_type, spine_indices[index_i:])
+                  return False
+                bimanual_regrasp_action.bimanual_wpts['after'] = [res[1][0][::-1],                                                res[1][1][::-1]]
+                bimanual_regrasp_action.timestamps['after'] = res[2]
+                bimanual_regrasp_action.rot_traj['after'] = res[4]
+                bimanual_regrasp_action.rot_traj_reverse['after'] = res[3]
+                bimanual_regrasp_action.translation_traj['after'] = reverse_traj(res[5])
 
-            q_robots_before_regrasp = [
-              bimanual_regrasp_action.bimanual_wpts['before'][0][-1],
-              bimanual_regrasp_action.bimanual_wpts['before'][1][-1]]
-            q_robots_after_regrasp = [
-              bimanual_regrasp_action.bimanual_wpts['after'][0][0],
-              bimanual_regrasp_action.bimanual_wpts['after'][1][0]]
+                q_robots_before_regrasp = [
+                  bimanual_regrasp_action.bimanual_wpts['before'][0][-1],
+                  bimanual_regrasp_action.bimanual_wpts['before'][1][-1]]
+                q_robots_after_regrasp = [
+                  bimanual_regrasp_action.bimanual_wpts['after'][0][0],
+                  bimanual_regrasp_action.bimanual_wpts['after'][1][0]]
 
-            # position everything correctly 
-            self.obj.SetTransform(T_place)
-            for robot, q_before in zip(self.robots,
-                                       q_robots_before_regrasp):
-              robot.SetActiveDOFValues(q_before)
-            # plan regrasp
-            for i in xrange(self._nrobots):
-              q_before = q_robots_before_regrasp[i]
-              q_after = q_robots_after_regrasp[i]
-              if not np.isclose(q_before, q_after, rtol=1e-3).all():
-                robot = self.robots[i]
-                robot.SetDOFValues([0], [self._ndof]) # open gripper
-                if self._plan_regrasp:
-                  params = orpy.Planner.PlannerParameters()
-                  params.SetRobotActiveJoints(robot)
-                  params.SetGoalConfig(q_after)
-                  params.SetExtraParameters(
-                    """
-                    <_nmaxiterations>300</_nmaxiterations>
-                    <_postprocessing planner="linearsmoother">
-                    <_nmaxiterations>1</_nmaxiterations></_postprocessing>
-                    """)
-                  self.rave_planner.InitPlan(robot, params)
-                  traj = orpy.RaveCreateTrajectory(self.env, '')
+                # position everything correctly 
+                self.obj.SetTransform(T_place)
+                for robot, q_before in zip(self.robots,
+                                           q_robots_before_regrasp):
+                  robot.SetActiveDOFValues(q_before)
+                # plan regrasp
+                for i in xrange(self._nrobots):
+                  q_before = q_robots_before_regrasp[i]
+                  q_after = q_robots_after_regrasp[i]
+                  if not np.isclose(q_before, q_after, rtol=1e-3).all():
+                    robot = self.robots[i]
+                    robot.SetDOFValues([0], [self._ndof]) # open gripper
+                    if self._plan_regrasp:
+                      params = orpy.Planner.PlannerParameters()
+                      params.SetRobotActiveJoints(robot)
+                      params.SetGoalConfig(q_after)
+                      params.SetExtraParameters(
+                        """
+                        <_nmaxiterations>300</_nmaxiterations>
+                        <_postprocessing planner="linearsmoother">
+                        <_nmaxiterations>1</_nmaxiterations></_postprocessing>
+                        """)
+                      self.rave_planner.InitPlan(robot, params)
+                      traj = orpy.RaveCreateTrajectory(self.env, '')
 
-                  if self.rave_planner.PlanPath(traj) == HAS_SOLUTION:
-                    # print colorize('{0}'.format(self._is_bad_regrasp_T([i], vertex.SE3_config_end.T)),'green')
-                    bimanual_regrasp_action.regrasp_traj.trajs[i] = traj
-                    robot.SetActiveDOFValues(q_after)
-                    self.loose_gripper(query, [i])
-                  else:
-                    self._output_info('Planning failed, reforming trees...', 
-                                      'red')
-                    # print colorize('{0}'.format(self._is_bad_regrasp_T([i], vertex.SE3_config_end.T)),'red')
-                    query.regrasp_T_blacklist[i].append(vertex.SE3_config_end.T)
-                    self._output_info('index: {0}'.format(index), 'red')
-                    self.loose_gripper(query)
-                    self._reform_trees(tree_type, spine_indices[index_i:])
-                    return False
+                      if self.rave_planner.PlanPath(traj) == HAS_SOLUTION:
+                        # print colorize('{0}'.format(self._is_bad_regrasp_T([i], vertex.SE3_config_end.T)),'green')
+                        bimanual_regrasp_action.regrasp_traj.trajs[i] = traj
+                        robot.SetActiveDOFValues(q_after)
+                        self.loose_gripper(query, [i])
+                      else:
+                        self._output_info('Planning failed, reforming trees...', 
+                                          'red')
+                        # print colorize('{0}'.format(self._is_bad_regrasp_T([i], vertex.SE3_config_end.T)),'red')
+                        query.regrasp_T_blacklist[i].append(vertex.SE3_config_end.T)
+                        self._output_info('index: {0}'.format(index), 'red')
+                        self.loose_gripper(query)
+                        self._reform_trees(tree_type, spine_indices[index_i:])
+                        return False
 
           elif vertex.contain_regrasp == STARTREGRASP:
             q_robots_efo = [robot.GetDOFValues()[-1] for robot in self.robots]
 
-            place_count = 20
-            perturb_first = False
-            for i in xrange(place_count):
-              if i > 0:
-                perturb_first = True
-              print i
-              T_place = intermediateplacement.ComputeFeasibleClosePlacements(
-                self.robots, query.qgrasps, query.q_robots_grasp, 
-                q_robots_efo, self.obj, vertex.SE3_config_start.T,
-                query.fmax, query.mu, self.pobj, placementType=2,
-                perturb_first=perturb_first)
-              if T_place is not None:
-                break
+            for trial_iter in xrange(N_max):
+              if trial_iter < N_max-1:
+                T_place = intermediateplacement.ComputeFeasibleClosePlacements(
+                  self.robots, query.qgrasps, query.q_robots_grasp, 
+                  q_robots_efo, self.obj, vertex.SE3_config_start.T,
+                  query.fmax, query.mu, self.pobj, placementType=2,
+                  perturb_first=True)
 
-            if T_place is None:
-              self._output_info('No valid placement, reforming trees...', 
-                                'red')
-              query.regrasp_T_blacklist[0].append(vertex.SE3_config_start.T)
-              query.regrasp_T_blacklist[1].append(vertex.SE3_config_start.T)
-              self._reform_trees(tree_type, spine_indices[index_i:])
-              return False
-            bimanual_regrasp_action.T_place = np.array(T_place)
+                if T_place is None:
+                  self._output_info('No valid placement, try next...', 
+                                    'red')
+                  continue
+                bimanual_regrasp_action.T_place = np.array(T_place)
 
-            SE3_config_place = SE3Config.from_matrix(T_place)
+                SE3_config_place = SE3Config.from_matrix(T_place)
 
-            # wpts traj before placement
-            res = self._move_to_placement(vertex.SE3_config_start, 
-                                          SE3_config_place, 
-                                          vertex.q_robots_start)
-            if len(res) == 1: # move to placement failed
-              self._output_info('Cannot move to placement,'
-                                ' reforming trees...', 'red')
-              query.regrasp_T_blacklist[0].append(vertex.SE3_config_start.T)
-              query.regrasp_T_blacklist[1].append(vertex.SE3_config_start.T)
-              self._reform_trees(tree_type, spine_indices[index_i:])
-              return False
-            bimanual_regrasp_action.bimanual_wpts['before'] = res[1]
-            bimanual_regrasp_action.timestamps['before'] = res[2]
-            bimanual_regrasp_action.rot_traj['before'] = res[3]
-            bimanual_regrasp_action.rot_traj_reverse['before'] = res[4]
-            bimanual_regrasp_action.translation_traj['before'] = res[5]
+                # wpts traj before placement
+                res = self._move_to_placement(vertex.SE3_config_start, 
+                                              SE3_config_place, 
+                                              vertex.q_robots_start)
+                if len(res) == 1: # move to placement failed
+                  self._output_info('Cannot move to placement,'
+                                    ' try next...', 'red')
+                  continue
+                bimanual_regrasp_action.bimanual_wpts['before'] = res[1]
+                bimanual_regrasp_action.timestamps['before'] = res[2]
+                bimanual_regrasp_action.rot_traj['before'] = res[3]
+                bimanual_regrasp_action.rot_traj_reverse['before'] = res[4]
+                bimanual_regrasp_action.translation_traj['before'] = res[5]
 
-            # wpts traj after placement
-            res = self._move_to_placement(vertex.SE3_config_end, 
-                                          SE3_config_place, 
-                                          vertex.q_robots_inter)
-            if len(res) == 1: # move to placement failed
-              self._output_info('Cannot move back from placement,'
-                                ' reforming trees...', 'red')
-              query.regrasp_T_blacklist[0].append(vertex.SE3_config_start.T)
-              query.regrasp_T_blacklist[1].append(vertex.SE3_config_start.T)
-              self._reform_trees(tree_type, spine_indices[index_i:])
-              return False
-            bimanual_regrasp_action.bimanual_wpts['after'] = [res[1][0][::-1],                                                res[1][1][::-1]]
-            bimanual_regrasp_action.timestamps['after'] = res[2]
-            bimanual_regrasp_action.rot_traj['after'] = res[4]
-            bimanual_regrasp_action.rot_traj_reverse['after'] = res[3]
-            bimanual_regrasp_action.translation_traj['after'] = reverse_traj(res[5])
+                # wpts traj after placement
+                res = self._move_to_placement(vertex.SE3_config_end, 
+                                              SE3_config_place, 
+                                              vertex.q_robots_inter)
+                if len(res) == 1: # move to placement failed
+                  self._output_info('Cannot move back from placement,'
+                                    ' try next...', 'red')
+                  continue
+                bimanual_regrasp_action.bimanual_wpts['after'] = [res[1][0][::-1],                                                res[1][1][::-1]]
+                bimanual_regrasp_action.timestamps['after'] = res[2]
+                bimanual_regrasp_action.rot_traj['after'] = res[4]
+                bimanual_regrasp_action.rot_traj_reverse['after'] = res[3]
+                bimanual_regrasp_action.translation_traj['after'] = reverse_traj(res[5])
 
-            q_robots_before_regrasp = [
-              bimanual_regrasp_action.bimanual_wpts['before'][0][-1],
-              bimanual_regrasp_action.bimanual_wpts['before'][1][-1]]
-            q_robots_after_regrasp = [
-              bimanual_regrasp_action.bimanual_wpts['after'][0][0],
-              bimanual_regrasp_action.bimanual_wpts['after'][1][0]]
+                q_robots_before_regrasp = [
+                  bimanual_regrasp_action.bimanual_wpts['before'][0][-1],
+                  bimanual_regrasp_action.bimanual_wpts['before'][1][-1]]
+                q_robots_after_regrasp = [
+                  bimanual_regrasp_action.bimanual_wpts['after'][0][0],
+                  bimanual_regrasp_action.bimanual_wpts['after'][1][0]]
 
-            # position everything correctly 
-            self.obj.SetTransform(T_place)
-            for robot, q_before in zip(self.robots,
-                                       q_robots_before_regrasp):
-              robot.SetActiveDOFValues(q_before)
-            # plan regrasp
-            for i in xrange(self._nrobots):
-              q_before = q_robots_before_regrasp[i]
-              q_after = q_robots_after_regrasp[i]
-              if not np.isclose(q_before, q_after, rtol=1e-3).all():
-                robot = self.robots[i]
-                robot.SetDOFValues([0], [self._ndof])
-                if self._plan_regrasp:
-                  params = orpy.Planner.PlannerParameters()
-                  params.SetRobotActiveJoints(robot)
-                  params.SetGoalConfig(q_after)
-                  params.SetExtraParameters(
-                    """
-                    <_nmaxiterations>300</_nmaxiterations>
-                    <_postprocessing planner="linearsmoother">
-                    <_nmaxiterations>1</_nmaxiterations></_postprocessing>
-                    """)
-                  self.rave_planner.InitPlan(robot, params)
-                  traj = orpy.RaveCreateTrajectory(self.env, '')
-                  if self.rave_planner.PlanPath(traj) == HAS_SOLUTION:
-                    # print colorize('{0}'.format(self._is_bad_regrasp_T([i], vertex.SE3_config_start.T)),'green')
-                    bimanual_regrasp_action.regrasp_traj.trajs[i] = traj
-                    robot.SetActiveDOFValues(q_after)
-                    self.loose_gripper(query, [i])
-                  else:
-                    self._output_info('Planning failed, reforming trees...', 
-                                      'red')
-                    # print colorize('{0}'.format(self._is_bad_regrasp_T([i], vertex.SE3_config_start.T)),'red')
-                    query.regrasp_T_blacklist[i].append(vertex.SE3_config_start.T)
-                    self._output_info('index: {0}'.format(index), 'red')
-                    self.loose_gripper(query)
-                    self._reform_trees(tree_type, spine_indices[index_i:])
-                    return False
+                # position everything correctly 
+                self.obj.SetTransform(T_place)
+                for robot, q_before in zip(self.robots,
+                                           q_robots_before_regrasp):
+                  robot.SetActiveDOFValues(q_before)
+                # plan regrasp
+                for i in xrange(self._nrobots):
+                  q_before = q_robots_before_regrasp[i]
+                  q_after = q_robots_after_regrasp[i]
+                  if not np.isclose(q_before, q_after, rtol=1e-3).all():
+                    robot = self.robots[i]
+                    robot.SetDOFValues([0], [self._ndof])
+                    if self._plan_regrasp:
+                      params = orpy.Planner.PlannerParameters()
+                      params.SetRobotActiveJoints(robot)
+                      params.SetGoalConfig(q_after)
+                      params.SetExtraParameters(
+                        """
+                        <_nmaxiterations>300</_nmaxiterations>
+                        <_postprocessing planner="linearsmoother">
+                        <_nmaxiterations>1</_nmaxiterations></_postprocessing>
+                        """)
+                      self.rave_planner.InitPlan(robot, params)
+                      traj = orpy.RaveCreateTrajectory(self.env, '')
+                      if self.rave_planner.PlanPath(traj) == HAS_SOLUTION:
+                        # print colorize('{0}'.format(self._is_bad_regrasp_T([i], vertex.SE3_config_start.T)),'green')
+                        bimanual_regrasp_action.regrasp_traj.trajs[i] = traj
+                        robot.SetActiveDOFValues(q_after)
+                        self.loose_gripper(query, [i])
+                      else:
+                        self._output_info('Planning failed, reforming trees...', 
+                                          'red')
+                        # print colorize('{0}'.format(self._is_bad_regrasp_T([i], vertex.SE3_config_start.T)),'red')
+                        query.regrasp_T_blacklist[i].append(vertex.SE3_config_start.T)
+                        self._output_info('index: {0}'.format(index), 'red')
+                        self.loose_gripper(query)
+                        self._reform_trees(tree_type, spine_indices[index_i:])
+                        return False
+              else:
+                T_place = intermediateplacement.ComputeFeasibleClosePlacements(
+                  self.robots, query.qgrasps, query.q_robots_grasp, 
+                  q_robots_efo, self.obj, vertex.SE3_config_start.T,
+                  query.fmax, query.mu, self.pobj, placementType=2,
+                  perturb_first=True)
+
+                if T_place is None:
+                  self._output_info('No valid placement, reforming trees...', 
+                                    'red')
+                  query.regrasp_T_blacklist[0].append(vertex.SE3_config_start.T)
+                  query.regrasp_T_blacklist[1].append(vertex.SE3_config_start.T)
+                  self._reform_trees(tree_type, spine_indices[index_i:])
+                  return False
+                bimanual_regrasp_action.T_place = np.array(T_place)
+
+                SE3_config_place = SE3Config.from_matrix(T_place)
+
+                # wpts traj before placement
+                res = self._move_to_placement(vertex.SE3_config_start, 
+                                              SE3_config_place, 
+                                              vertex.q_robots_start)
+                if len(res) == 1: # move to placement failed
+                  self._output_info('Cannot move to placement,'
+                                    ' reforming trees...', 'red')
+                  query.regrasp_T_blacklist[0].append(vertex.SE3_config_start.T)
+                  query.regrasp_T_blacklist[1].append(vertex.SE3_config_start.T)
+                  self._reform_trees(tree_type, spine_indices[index_i:])
+                  return False
+                bimanual_regrasp_action.bimanual_wpts['before'] = res[1]
+                bimanual_regrasp_action.timestamps['before'] = res[2]
+                bimanual_regrasp_action.rot_traj['before'] = res[3]
+                bimanual_regrasp_action.rot_traj_reverse['before'] = res[4]
+                bimanual_regrasp_action.translation_traj['before'] = res[5]
+
+                # wpts traj after placement
+                res = self._move_to_placement(vertex.SE3_config_end, 
+                                              SE3_config_place, 
+                                              vertex.q_robots_inter)
+                if len(res) == 1: # move to placement failed
+                  self._output_info('Cannot move back from placement,'
+                                    ' reforming trees...', 'red')
+                  query.regrasp_T_blacklist[0].append(vertex.SE3_config_start.T)
+                  query.regrasp_T_blacklist[1].append(vertex.SE3_config_start.T)
+                  self._reform_trees(tree_type, spine_indices[index_i:])
+                  return False
+                bimanual_regrasp_action.bimanual_wpts['after'] = [res[1][0][::-1],                                                res[1][1][::-1]]
+                bimanual_regrasp_action.timestamps['after'] = res[2]
+                bimanual_regrasp_action.rot_traj['after'] = res[4]
+                bimanual_regrasp_action.rot_traj_reverse['after'] = res[3]
+                bimanual_regrasp_action.translation_traj['after'] = reverse_traj(res[5])
+
+                q_robots_before_regrasp = [
+                  bimanual_regrasp_action.bimanual_wpts['before'][0][-1],
+                  bimanual_regrasp_action.bimanual_wpts['before'][1][-1]]
+                q_robots_after_regrasp = [
+                  bimanual_regrasp_action.bimanual_wpts['after'][0][0],
+                  bimanual_regrasp_action.bimanual_wpts['after'][1][0]]
+
+                # position everything correctly 
+                self.obj.SetTransform(T_place)
+                for robot, q_before in zip(self.robots,
+                                           q_robots_before_regrasp):
+                  robot.SetActiveDOFValues(q_before)
+                # plan regrasp
+                for i in xrange(self._nrobots):
+                  q_before = q_robots_before_regrasp[i]
+                  q_after = q_robots_after_regrasp[i]
+                  if not np.isclose(q_before, q_after, rtol=1e-3).all():
+                    robot = self.robots[i]
+                    robot.SetDOFValues([0], [self._ndof])
+                    if self._plan_regrasp:
+                      params = orpy.Planner.PlannerParameters()
+                      params.SetRobotActiveJoints(robot)
+                      params.SetGoalConfig(q_after)
+                      params.SetExtraParameters(
+                        """
+                        <_nmaxiterations>300</_nmaxiterations>
+                        <_postprocessing planner="linearsmoother">
+                        <_nmaxiterations>1</_nmaxiterations></_postprocessing>
+                        """)
+                      self.rave_planner.InitPlan(robot, params)
+                      traj = orpy.RaveCreateTrajectory(self.env, '')
+                      if self.rave_planner.PlanPath(traj) == HAS_SOLUTION:
+                        # print colorize('{0}'.format(self._is_bad_regrasp_T([i], vertex.SE3_config_start.T)),'green')
+                        bimanual_regrasp_action.regrasp_traj.trajs[i] = traj
+                        robot.SetActiveDOFValues(q_after)
+                        self.loose_gripper(query, [i])
+                      else:
+                        self._output_info('Planning failed, reforming trees...', 
+                                          'red')
+                        # print colorize('{0}'.format(self._is_bad_regrasp_T([i], vertex.SE3_config_start.T)),'red')
+                        query.regrasp_T_blacklist[i].append(vertex.SE3_config_start.T)
+                        self._output_info('index: {0}'.format(index), 'red')
+                        self.loose_gripper(query)
+                        self._reform_trees(tree_type, spine_indices[index_i:])
+                        return False
+
                     
           vertex._fill_regrasp_action(bimanual_regrasp_action)
 
@@ -1440,91 +1612,179 @@ class CCPlanner(object):
 
       q_robots_efo = [robot.GetDOFValues()[-1] for robot in self.robots]
 
-      T_place = intermediateplacement.ComputeFeasibleClosePlacements(
-        self.robots, query.qgrasps, query.q_robots_grasp, q_robots_efo, 
-        self.obj, v_goal.SE3_config_end.T, query.fmax, query.mu, 
-        self.pobj, placementType=2)
-      if T_place is None:
-        self._output_info('No valid placement', 'red')
-        return False
-      bimanual_regrasp_action.T_place = np.array(T_place)
+      for trial_iter in xrange(N_max):
+        if trial_iter < N_max-1:
+          T_place = intermediateplacement.ComputeFeasibleClosePlacements(
+            self.robots, query.qgrasps, query.q_robots_grasp, q_robots_efo, 
+            self.obj, v_goal.SE3_config_end.T, query.fmax, query.mu, 
+            self.pobj, placementType=2, perturb_first=True)
+          if T_place is None:
+            self._output_info('No valid placement, try next...', 'red')
+            continue
+          bimanual_regrasp_action.T_place = np.array(T_place)
 
-      SE3_config_place = SE3Config.from_matrix(T_place)
+          SE3_config_place = SE3Config.from_matrix(T_place)
 
-      # wpts traj before placement
-      res = self._move_to_placement(v_goal.SE3_config_end, 
-                                    SE3_config_place, 
-                                    query.connecting_q_robots_inter)
-      if len(res) == 1: # move to placement failed
-        self._output_info('Cannot move to placement', 'red')
-        query.regrasp_T_blacklist[0].append(v_goal.SE3_config_end.T)
-        query.regrasp_T_blacklist[1].append(v_goal.SE3_config_end.T)
-        return False
+          # wpts traj before placement
+          res = self._move_to_placement(v_goal.SE3_config_end, 
+                                        SE3_config_place, 
+                                        query.connecting_q_robots_inter)
+          if len(res) == 1: # move to placement failed
+            self._output_info('Cannot move to placement, try next...', 'red')
+            continue
 
-      bimanual_regrasp_action.bimanual_wpts['before'] = res[1]
-      bimanual_regrasp_action.timestamps['before'] = res[2]
-      bimanual_regrasp_action.rot_traj['before'] = res[3]
-      bimanual_regrasp_action.rot_traj_reverse['before'] = res[4]
-      bimanual_regrasp_action.translation_traj['before'] = res[5]
-      
-      # wpts traj after placement
-      res = self._move_to_placement(v_goal.SE3_config_end, 
-                                    SE3_config_place, 
-                                    v_goal.q_robots_end)
-      if len(res) == 1: # move to placement failed
-        self._output_info('Cannot move back from placement,', 'red')
-        query.regrasp_T_blacklist[0].append(v_goal.SE3_config_end.T)
-        query.regrasp_T_blacklist[1].append(v_goal.SE3_config_end.T)
-        return False
-      bimanual_regrasp_action.bimanual_wpts['after'] = [res[1][0][::-1], 
-                                                        res[1][1][::-1]]
-      bimanual_regrasp_action.timestamps['after'] = res[2]
-      bimanual_regrasp_action.rot_traj['after'] = res[4]
-      bimanual_regrasp_action.rot_traj_reverse['after'] = res[3]
-      bimanual_regrasp_action.translation_traj['after'] = reverse_traj(res[5])
+          bimanual_regrasp_action.bimanual_wpts['before'] = res[1]
+          bimanual_regrasp_action.timestamps['before'] = res[2]
+          bimanual_regrasp_action.rot_traj['before'] = res[3]
+          bimanual_regrasp_action.rot_traj_reverse['before'] = res[4]
+          bimanual_regrasp_action.translation_traj['before'] = res[5]
+          
+          # wpts traj after placement
+          res = self._move_to_placement(v_goal.SE3_config_end, 
+                                        SE3_config_place, 
+                                        v_goal.q_robots_end)
+          if len(res) == 1: # move to placement failed
+            self._output_info('Cannot move back from placement, try next...', 'red')
+            continue
+          bimanual_regrasp_action.bimanual_wpts['after'] = [res[1][0][::-1], 
+                                                            res[1][1][::-1]]
+          bimanual_regrasp_action.timestamps['after'] = res[2]
+          bimanual_regrasp_action.rot_traj['after'] = res[4]
+          bimanual_regrasp_action.rot_traj_reverse['after'] = res[3]
+          bimanual_regrasp_action.translation_traj['after'] = reverse_traj(res[5])
 
-      q_robots_before_regrasp = [
-        bimanual_regrasp_action.bimanual_wpts['before'][0][-1],
-        bimanual_regrasp_action.bimanual_wpts['before'][1][-1]]
-      q_robots_after_regrasp = [
-        bimanual_regrasp_action.bimanual_wpts['after'][0][0],
-        bimanual_regrasp_action.bimanual_wpts['after'][1][0]]
+          q_robots_before_regrasp = [
+            bimanual_regrasp_action.bimanual_wpts['before'][0][-1],
+            bimanual_regrasp_action.bimanual_wpts['before'][1][-1]]
+          q_robots_after_regrasp = [
+            bimanual_regrasp_action.bimanual_wpts['after'][0][0],
+            bimanual_regrasp_action.bimanual_wpts['after'][1][0]]
 
-      # position everything correctly 
-      self.obj.SetTransform(T_place)
-      for robot, q_before in zip(self.robots, 
-                                 q_robots_before_regrasp):
-        robot.SetActiveDOFValues(q_before)
-      # plan regrasp
-      for i in xrange(self._nrobots):
-        q_before = q_robots_before_regrasp[i]
-        q_after = q_robots_after_regrasp[i]
-        if not np.isclose(q_before, q_after, rtol=1e-3).all():
-          robot = self.robots[i]
-          robot.SetDOFValues([0], [self._ndof])
-          if self._plan_regrasp:
-            params = orpy.Planner.PlannerParameters()
-            params.SetRobotActiveJoints(robot)
-            params.SetGoalConfig(q_after)
-            params.SetExtraParameters(
-              """
-              <_nmaxiterations>300</_nmaxiterations>
-              <_postprocessing planner="linearsmoother">
-              <_nmaxiterations>1</_nmaxiterations></_postprocessing>
-              """)
-            self.rave_planner.InitPlan(robot, params)
-            traj = orpy.RaveCreateTrajectory(self.env, '')
-            if self.rave_planner.PlanPath(traj) == HAS_SOLUTION:
-              bimanual_regrasp_action.regrasp_traj.trajs[i] = traj
-              robot.SetActiveDOFValues(q_after)
-              self.loose_gripper(query, [i])
-            else:
-              self._output_info('Planning failed', 'red')
-              query.regrasp_T_blacklist[i].append(v_goal.SE3_config_end.T)
-              self.loose_gripper(query)
-              return False
+          # position everything correctly 
+          self.obj.SetTransform(T_place)
+          for robot, q_before in zip(self.robots, 
+                                     q_robots_before_regrasp):
+            robot.SetActiveDOFValues(q_before)
+          # plan regrasp
+          for i in xrange(self._nrobots):
+            q_before = q_robots_before_regrasp[i]
+            q_after = q_robots_after_regrasp[i]
+            if not np.isclose(q_before, q_after, rtol=1e-3).all():
+              robot = self.robots[i]
+              robot.SetDOFValues([0], [self._ndof])
+              if self._plan_regrasp:
+                params = orpy.Planner.PlannerParameters()
+                params.SetRobotActiveJoints(robot)
+                params.SetGoalConfig(q_after)
+                params.SetExtraParameters(
+                  """
+                  <_nmaxiterations>300</_nmaxiterations>
+                  <_postprocessing planner="linearsmoother">
+                  <_nmaxiterations>1</_nmaxiterations></_postprocessing>
+                  """)
+                self.rave_planner.InitPlan(robot, params)
+                traj = orpy.RaveCreateTrajectory(self.env, '')
+                if self.rave_planner.PlanPath(traj) == HAS_SOLUTION:
+                  bimanual_regrasp_action.regrasp_traj.trajs[i] = traj
+                  robot.SetActiveDOFValues(q_after)
+                  self.loose_gripper(query, [i])
+                else:
+                  self._output_info('Planning failed', 'red')
+                  query.regrasp_T_blacklist[i].append(v_goal.SE3_config_end.T)
+                  self.loose_gripper(query)
+                  return False
 
-      query.connecting_bimanual_regrasp_action = bimanual_regrasp_action
+          query.connecting_bimanual_regrasp_action = bimanual_regrasp_action
+
+
+        else:
+          T_place = intermediateplacement.ComputeFeasibleClosePlacements(
+            self.robots, query.qgrasps, query.q_robots_grasp, q_robots_efo, 
+            self.obj, v_goal.SE3_config_end.T, query.fmax, query.mu, 
+            self.pobj, placementType=2, perturb_first=True)
+          if T_place is None:
+            self._output_info('No valid placement', 'red')
+            return False
+          bimanual_regrasp_action.T_place = np.array(T_place)
+
+          SE3_config_place = SE3Config.from_matrix(T_place)
+
+          # wpts traj before placement
+          res = self._move_to_placement(v_goal.SE3_config_end, 
+                                        SE3_config_place, 
+                                        query.connecting_q_robots_inter)
+          if len(res) == 1: # move to placement failed
+            self._output_info('Cannot move to placement', 'red')
+            query.regrasp_T_blacklist[0].append(v_goal.SE3_config_end.T)
+            query.regrasp_T_blacklist[1].append(v_goal.SE3_config_end.T)
+            return False
+
+          bimanual_regrasp_action.bimanual_wpts['before'] = res[1]
+          bimanual_regrasp_action.timestamps['before'] = res[2]
+          bimanual_regrasp_action.rot_traj['before'] = res[3]
+          bimanual_regrasp_action.rot_traj_reverse['before'] = res[4]
+          bimanual_regrasp_action.translation_traj['before'] = res[5]
+          
+          # wpts traj after placement
+          res = self._move_to_placement(v_goal.SE3_config_end, 
+                                        SE3_config_place, 
+                                        v_goal.q_robots_end)
+          if len(res) == 1: # move to placement failed
+            self._output_info('Cannot move back from placement,', 'red')
+            query.regrasp_T_blacklist[0].append(v_goal.SE3_config_end.T)
+            query.regrasp_T_blacklist[1].append(v_goal.SE3_config_end.T)
+            return False
+          bimanual_regrasp_action.bimanual_wpts['after'] = [res[1][0][::-1], 
+                                                            res[1][1][::-1]]
+          bimanual_regrasp_action.timestamps['after'] = res[2]
+          bimanual_regrasp_action.rot_traj['after'] = res[4]
+          bimanual_regrasp_action.rot_traj_reverse['after'] = res[3]
+          bimanual_regrasp_action.translation_traj['after'] = reverse_traj(res[5])
+
+          q_robots_before_regrasp = [
+            bimanual_regrasp_action.bimanual_wpts['before'][0][-1],
+            bimanual_regrasp_action.bimanual_wpts['before'][1][-1]]
+          q_robots_after_regrasp = [
+            bimanual_regrasp_action.bimanual_wpts['after'][0][0],
+            bimanual_regrasp_action.bimanual_wpts['after'][1][0]]
+
+          # position everything correctly 
+          self.obj.SetTransform(T_place)
+          for robot, q_before in zip(self.robots, 
+                                     q_robots_before_regrasp):
+            robot.SetActiveDOFValues(q_before)
+          # plan regrasp
+          for i in xrange(self._nrobots):
+            q_before = q_robots_before_regrasp[i]
+            q_after = q_robots_after_regrasp[i]
+            if not np.isclose(q_before, q_after, rtol=1e-3).all():
+              robot = self.robots[i]
+              robot.SetDOFValues([0], [self._ndof])
+              if self._plan_regrasp:
+                params = orpy.Planner.PlannerParameters()
+                params.SetRobotActiveJoints(robot)
+                params.SetGoalConfig(q_after)
+                params.SetExtraParameters(
+                  """
+                  <_nmaxiterations>300</_nmaxiterations>
+                  <_postprocessing planner="linearsmoother">
+                  <_nmaxiterations>1</_nmaxiterations></_postprocessing>
+                  """)
+                self.rave_planner.InitPlan(robot, params)
+                traj = orpy.RaveCreateTrajectory(self.env, '')
+                if self.rave_planner.PlanPath(traj) == HAS_SOLUTION:
+                  bimanual_regrasp_action.regrasp_traj.trajs[i] = traj
+                  robot.SetActiveDOFValues(q_after)
+                  self.loose_gripper(query, [i])
+                else:
+                  self._output_info('Planning failed', 'red')
+                  query.regrasp_T_blacklist[i].append(v_goal.SE3_config_end.T)
+                  self.loose_gripper(query)
+                  return False
+
+          query.connecting_bimanual_regrasp_action = bimanual_regrasp_action
+
+
 
     query.regrasp_planning_time += time() - t_begin
     return True
@@ -2023,7 +2283,7 @@ class CCPlanner(object):
     for robot_index in robot_indices:
       for T in self._query.regrasp_T_blacklist[robot_index]:
         if utils.SE3_distance(T, T_obj_regrasp, 
-                              1.0 / np.pi, 1.0) < self._query.step_size/8.0:
+                              1.0 / np.pi, 1.0) < self._query.step_size/4.0:
           self._output_info('Attempt to add regrasp but at bad T.',
                              bold=False)
           return True

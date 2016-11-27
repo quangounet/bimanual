@@ -17,7 +17,7 @@ if __name__ == "__main__":
   np.set_printoptions(precision=10, suppress=True)
   
   # Load OpenRAVE environment
-  scene_file = model_path + '/worlds/bimanual_setup_regrasp.env.xml'
+  scene_file = model_path + '/worlds/bimanual_setup_regrasp_snapshot.env.xml'
   env = orpy.Environment()
   env.SetViewer('qtcoin')
 
@@ -74,19 +74,17 @@ if __name__ == "__main__":
                     frame, qgrasp_left[0], qgrasp_left)
   left_robot.SetActiveDOFValues(left_manip.FindIKSolutions(T_left_gripper, orpy.IkFilterOptions.CheckEnvCollisions)[0])
 
-  qgrasp_right = [4, 5, 1, 0]
+  # feasible [4,5,1,0] [0]
+  qgrasp_right = [4, 5, 4, 0]
   T_right_gripper = pymanip_utils.ComputeTGripper2(
                       frame, qgrasp_right[0], qgrasp_right)
-  right_robot.SetActiveDOFValues(right_manip.FindIKSolutions(T_right_gripper, orpy.IkFilterOptions.CheckEnvCollisions)[0])
+  right_robot.SetActiveDOFValues(right_manip.FindIKSolutions(T_right_gripper, orpy.IkFilterOptions.CheckEnvCollisions)[1])
 
   left_taskmanip.CloseFingers()
   left_robot.WaitForController(0)
   right_taskmanip.CloseFingers()
   right_robot.WaitForController(0)
   ################## closed chain planning ###################
-
-  embed()
-  exit(0)
 
   obj_translation_limits =  [[0.7, 0.5, 0.5], [-0.7, -0.5, 0]]
   q_robots_start = [left_robot.GetActiveDOFValues(),
@@ -105,8 +103,10 @@ if __name__ == "__main__":
                     [left_robot, right_robot], frame, q_robots_start,
                      q_robots_grasp, T_obj_start, T_obj_goal)
 
-
   p_frame = putils.create_placement_object(frame, env, T_rest=T_table)
+
+  embed()
+  exit(0)
 
   import bimanual.planners.cc_planner_regrasp_transfer as ccp 
   ccplanner = ccp.CCPlanner(frame, [left_robot, right_robot], 
@@ -124,10 +124,10 @@ if __name__ == "__main__":
   ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, 
                         q_robots_goal, q_robots_grasp, qgrasps,
                         T_obj_start, nn=2, step_size=0.5, 
-                        fmax=100, mu=0.3, regrasp_limit=5)
+                        fmax=100, mu=0.3, regrasp_limit=4)
   ccplanner.set_query(ccquery)
-  res = ccplanner.solve(timeout=30)
+  res = ccplanner.solve(timeout=50)
 
-  ccplanner.shortcut(ccquery, maxiters=[30, 10])
+  ccplanner.shortcut(ccquery, maxiters=[30, 40])
   ccplanner.visualize_cctraj(ccquery.cctraj, speed=1)
 

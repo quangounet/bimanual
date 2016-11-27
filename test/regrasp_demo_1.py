@@ -17,7 +17,7 @@ if __name__ == "__main__":
   np.set_printoptions(precision=10, suppress=True)
   
   # Load OpenRAVE environment
-  scene_file = model_path + '/worlds/bimanual_setup_regrasp.env.xml'
+  scene_file = model_path + '/worlds/bimanual_setup_regrasp_snapshot.env.xml'
   env = orpy.Environment()
   env.SetViewer('qtcoin')
 
@@ -102,15 +102,25 @@ if __name__ == "__main__":
   embed()
   exit(0)
 
+  rep = 1
+  from time import time
   import bimanual.planners.cc_planner_regrasp_placement as ccp 
   ccplanner = ccp.CCPlanner(Lshape, p_Lshape, [left_robot, right_robot], 
                             plan_regrasp=True, debug=False)
-  ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, 
-                        q_robots_goal, q_robots_grasp, qgrasps,
-                        T_obj_start, nn=2, step_size=0.5, 
-                        fmax=100, mu=0.5, regrasp_limit=1)
-  ccplanner.set_query(ccquery)
-  res = ccplanner.solve(timeout=30)
+  t = time() 
+  i = 0
+  while i < rep:
+    print 'i: ', i
+    # fastest stepsize is 0.3
+    ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, 
+                          q_robots_goal, q_robots_grasp, qgrasps,
+                          T_obj_start, nn=2, step_size=0.3, 
+                          fmax=100, mu=0.5, regrasp_limit=1)
+    ccplanner.set_query(ccquery)
+    res = ccplanner.solve(timeout=30)
+    if res:
+      i += 1
+  print (time()-t)/rep
 
   ccplanner.shortcut(ccquery, maxiters=[30, 60])
   ccplanner.visualize_cctraj(ccquery.cctraj, speed=1)

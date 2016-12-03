@@ -1192,7 +1192,7 @@ class CCPlanner(object):
       return False,
 
   def _plan_regrasp_trajs(self):
-    N_max = 1
+    N_max = 4
     self._output_info('Global path found.', 'yellow')
     t_begin = time()
     query = self._query
@@ -1222,14 +1222,27 @@ class CCPlanner(object):
             q_robots_efo = [robot.GetDOFValues()[-1] for robot in self.robots]
             for trial_iter in xrange(N_max):
               if trial_iter < N_max-1:
-                T_place = intermediateplacement.ComputeFeasibleClosePlacements(
-                  self.robots, query.qgrasps, query.q_robots_grasp, q_robots_efo, 
-                  self.obj, vertex.SE3_config_end.T, query.fmax, query.mu, 
-                  self.pobj, placementType=2, perturb_first=True)
+                place_count = 5
+                perturb_first = True
+                for i in xrange(place_count):
+                  if i > 0:
+                    perturb_first = True
+                  print i
+                  T_place = intermediateplacement.ComputeFeasibleClosePlacements(
+                    self.robots, query.qgrasps, query.q_robots_grasp, 
+                    q_robots_efo, self.obj, vertex.SE3_config_end.T,
+                    query.fmax, query.mu, self.pobj, placementType=2, 
+                    perturb_first=perturb_first)
+                  if T_place is not None:
+                    break
+
                 if T_place is None:
-                  self._output_info('No valid placement, ',
-                                    'try next...', 'red')
-                  continue
+                  self._output_info('No valid placement, reforming trees...', 
+                                    'red')
+                  query.regrasp_T_blacklist[0].append(vertex.SE3_config_end.T)
+                  query.regrasp_T_blacklist[1].append(vertex.SE3_config_end.T)
+                  self._reform_trees(tree_type, spine_indices[index_i:])
+                  return False
                 bimanual_regrasp_action.T_place = np.array(T_place)
 
                 SE3_config_place = SE3Config.from_matrix(T_place)
@@ -1309,10 +1322,20 @@ class CCPlanner(object):
                         self._reform_trees(tree_type, spine_indices[index_i:])
                         return False
               else:
-                T_place = intermediateplacement.ComputeFeasibleClosePlacements(
-                  self.robots, query.qgrasps, query.q_robots_grasp, q_robots_efo, 
-                  self.obj, vertex.SE3_config_end.T, query.fmax, query.mu, 
-                  self.pobj, placementType=2, perturb_first=True)
+                place_count = 5
+                perturb_first = True
+                for i in xrange(place_count):
+                  if i > 0:
+                    perturb_first = True
+                  print i
+                  T_place = intermediateplacement.ComputeFeasibleClosePlacements(
+                    self.robots, query.qgrasps, query.q_robots_grasp, 
+                    q_robots_efo, self.obj, vertex.SE3_config_end.T,
+                    query.fmax, query.mu, self.pobj, placementType=2, 
+                    perturb_first=perturb_first)
+                  if T_place is not None:
+                    break
+
                 if T_place is None:
                   self._output_info('No valid placement, reforming trees...', 
                                     'red')
@@ -1411,16 +1434,28 @@ class CCPlanner(object):
 
             for trial_iter in xrange(N_max):
               if trial_iter < N_max-1:
-                T_place = intermediateplacement.ComputeFeasibleClosePlacements(
-                  self.robots, query.qgrasps, query.q_robots_grasp, 
-                  q_robots_efo, self.obj, vertex.SE3_config_start.T,
-                  query.fmax, query.mu, self.pobj, placementType=2,
-                  perturb_first=True)
+                place_count = 5
+                perturb_first = True
+                for i in xrange(place_count):
+                  if i > 0:
+                    perturb_first = True
+                  print i
+                  T_place = intermediateplacement.ComputeFeasibleClosePlacements(
+                    self.robots, query.qgrasps, query.q_robots_grasp, 
+                    q_robots_efo, self.obj, vertex.SE3_config_start.T,
+                    query.fmax, query.mu, self.pobj, placementType=2,
+                    perturb_first=perturb_first)
+                  if T_place is not None:
+                    break
 
                 if T_place is None:
-                  self._output_info('No valid placement, try next...', 
+                  self._output_info('No valid placement, reforming trees...', 
                                     'red')
-                  continue
+                  query.regrasp_T_blacklist[0].append(vertex.SE3_config_start.T)
+                  query.regrasp_T_blacklist[1].append(vertex.SE3_config_start.T)
+                  self._reform_trees(tree_type, spine_indices[index_i:])
+                  return False
+
                 bimanual_regrasp_action.T_place = np.array(T_place)
 
                 SE3_config_place = SE3Config.from_matrix(T_place)
@@ -1499,11 +1534,19 @@ class CCPlanner(object):
                         self._reform_trees(tree_type, spine_indices[index_i:])
                         return False
               else:
-                T_place = intermediateplacement.ComputeFeasibleClosePlacements(
-                  self.robots, query.qgrasps, query.q_robots_grasp, 
-                  q_robots_efo, self.obj, vertex.SE3_config_start.T,
-                  query.fmax, query.mu, self.pobj, placementType=2,
-                  perturb_first=True)
+                place_count = 5
+                perturb_first = True
+                for i in xrange(place_count):
+                  if i > 0:
+                    perturb_first = True
+                  print i
+                  T_place = intermediateplacement.ComputeFeasibleClosePlacements(
+                    self.robots, query.qgrasps, query.q_robots_grasp, 
+                    q_robots_efo, self.obj, vertex.SE3_config_start.T,
+                    query.fmax, query.mu, self.pobj, placementType=2,
+                    perturb_first=perturb_first)
+                  if T_place is not None:
+                    break
 
                 if T_place is None:
                   self._output_info('No valid placement, reforming trees...', 
@@ -1512,6 +1555,7 @@ class CCPlanner(object):
                   query.regrasp_T_blacklist[1].append(vertex.SE3_config_start.T)
                   self._reform_trees(tree_type, spine_indices[index_i:])
                   return False
+
                 bimanual_regrasp_action.T_place = np.array(T_place)
 
                 SE3_config_place = SE3Config.from_matrix(T_place)
@@ -1614,13 +1658,22 @@ class CCPlanner(object):
 
       for trial_iter in xrange(N_max):
         if trial_iter < N_max-1:
-          T_place = intermediateplacement.ComputeFeasibleClosePlacements(
-            self.robots, query.qgrasps, query.q_robots_grasp, q_robots_efo, 
-            self.obj, v_goal.SE3_config_end.T, query.fmax, query.mu, 
-            self.pobj, placementType=2, perturb_first=True)
+          place_count = 5
+          perturb_first = True
+          for i in xrange(place_count):
+            if i > 0:
+              perturb_first = True
+            print i
+            T_place = intermediateplacement.ComputeFeasibleClosePlacements(
+              self.robots, query.qgrasps, query.q_robots_grasp, q_robots_efo, 
+              self.obj, v_goal.SE3_config_end.T, query.fmax, query.mu, 
+              self.pobj, placementType=2, perturb_first=perturb_first)
+            if T_place is not None:
+              break
           if T_place is None:
-            self._output_info('No valid placement, try next...', 'red')
-            continue
+            self._output_info('No valid placement', 'red')
+            return False
+
           bimanual_regrasp_action.T_place = np.array(T_place)
 
           SE3_config_place = SE3Config.from_matrix(T_place)
@@ -1698,13 +1751,22 @@ class CCPlanner(object):
 
 
         else:
-          T_place = intermediateplacement.ComputeFeasibleClosePlacements(
-            self.robots, query.qgrasps, query.q_robots_grasp, q_robots_efo, 
-            self.obj, v_goal.SE3_config_end.T, query.fmax, query.mu, 
-            self.pobj, placementType=2, perturb_first=True)
+          place_count = 5
+          perturb_first = True
+          for i in xrange(place_count):
+            if i > 0:
+              perturb_first = True
+            print i
+            T_place = intermediateplacement.ComputeFeasibleClosePlacements(
+              self.robots, query.qgrasps, query.q_robots_grasp, q_robots_efo, 
+              self.obj, v_goal.SE3_config_end.T, query.fmax, query.mu, 
+              self.pobj, placementType=2, perturb_first=perturb_first)
+            if T_place is not None:
+              break
           if T_place is None:
             self._output_info('No valid placement', 'red')
             return False
+
           bimanual_regrasp_action.T_place = np.array(T_place)
 
           SE3_config_place = SE3Config.from_matrix(T_place)

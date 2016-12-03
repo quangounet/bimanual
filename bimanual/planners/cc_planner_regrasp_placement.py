@@ -721,7 +721,56 @@ class CCQuery(object):
     # Parameters    
     self.upper_limits = obj_translation_limits[0]
     self.lower_limits = obj_translation_limits[1]
+
+  def serialize(self):
+    for traj in self.cctraj.bimanual_trajs:
+      if type(traj) is not list:
+        for key in traj.trajs:
+          if traj.trajs[key] is not None and type(traj.trajs[key]) is not str:
+            traj.trajs[key] = traj.trajs[key].serialize()
+
+    traj = self.connecting_bimanual_regrasp_action
+    if traj is not None:
+      for key in traj.trajs:
+        if traj.trajs[key] is not None and type(traj.trajs[key]) is not str:
+          traj.trajs[key] = traj.trajs[key].serialize()
+
+    for vertex in self.database.vertices:
+      if vertex.bimanual_regrasp_action is not None:
+        traj = vertex.bimanual_regrasp_action.regrasp_traj
+        if traj is not None:
+          for key in traj.trajs:
+            if traj.trajs[key] is not None and type(traj.trajs[key]) is not str:
+              traj.trajs[key] = traj.trajs[key].serialize()
+
+
+  def deserialize(self, env):
+    for traj in self.cctraj.bimanual_trajs:
+      if type(traj) is not list:
+        for key in traj.trajs:
+          if type(traj.trajs[key]) is str:
+            temp = orpy.RaveCreateTrajectory(env, '')
+            orpy.Trajectory.deserialize(temp, traj.trajs[key])
+            traj.trajs[key] = temp
     
+    traj = self.connecting_bimanual_regrasp_action
+    if traj is not None:
+      for key in traj.trajs:
+        if type(traj.trajs[key]) is str:
+          temp = orpy.RaveCreateTrajectory(env, '')
+          orpy.Trajectory.deserialize(temp, traj.trajs[key])
+          traj.trajs[key] = temp
+
+    for vertex in self.database.vertices:
+      if vertex.bimanual_regrasp_action is not None:
+        traj = vertex.bimanual_regrasp_action.regrasp_traj
+        if traj is not None:
+          for key in traj.trajs:
+            if type(traj.trajs[key]) is str:
+              temp = orpy.RaveCreateTrajectory(env, '')
+              orpy.Trajectory.deserialize(temp, traj.trajs[key])
+              traj.trajs[key] = temp
+
   def generate_final_lie_traj(self):
     """
     Generate final lie trajectory of this query (if solved) and store it 
@@ -1154,15 +1203,16 @@ class CCPlanner(object):
     qd_end = SE3_config_place.qd
     pd_end = SE3_config_place.pd
 
+    interpolation_duration = query.interpolation_duration * 2
       
     # Interpolate a SE3 trajectory for the object
     R_beg = orpy.rotationMatrixFromQuat(q_beg)
     R_end = orpy.rotationMatrixFromQuat(q_end)
     rot_traj = lie.InterpolateSO3(R_beg, R_end, qd_beg, qd_end,
-                                  query.interpolation_duration)
+                                  interpolation_duration)
     rot_traj_reverse = lie.InterpolateSO3(R_end, R_beg, qd_end, qd_beg,
-                                          query.interpolation_duration)
-    translation_traj_str = utils.traj_str_3rd_degree(p_beg, p_end, pd_beg, pd_end, query.interpolation_duration)
+                                          interpolation_duration)
+    translation_traj_str = utils.traj_str_3rd_degree(p_beg, p_end, pd_beg, pd_end, interpolation_duration)
     translation_traj = TrajectoryFromStr(translation_traj_str)
 
     # Check collision (object trajectory)
@@ -1220,10 +1270,20 @@ class CCPlanner(object):
           if vertex.contain_regrasp == ENDREGRASP:
             q_robots_efo = [robot.GetDOFValues()[-1] for robot in self.robots]
 
-            T_place = intermediateplacement.ComputeFeasibleClosePlacements(
-              self.robots, query.qgrasps, query.q_robots_grasp, q_robots_efo, 
-              self.obj, vertex.SE3_config_end.T, query.fmax, query.mu, 
-              self.pobj, placementType=2)
+            place_count = 5
+            perturb_first = False
+            for i in xrange(place_count):
+              if i > 0:
+                perturb_first = True
+              print i
+              T_place = intermediateplacement.ComputeFeasibleClosePlacements(
+                self.robots, query.qgrasps, query.q_robots_grasp, 
+                q_robots_efo, self.obj, vertex.SE3_config_end.T, query.fmax, 
+                query.mu, self.pobj, placementType=2, 
+                perturb_first=perturb_first)
+              if T_place is not None:
+                break
+
             if T_place is None:
               self._output_info('No valid placement, reforming trees...', 
                                 'red')
@@ -1320,7 +1380,7 @@ class CCPlanner(object):
           elif vertex.contain_regrasp == STARTREGRASP:
             q_robots_efo = [robot.GetDOFValues()[-1] for robot in self.robots]
 
-            place_count = 20
+            place_count = 5
             perturb_first = False
             for i in xrange(place_count):
               if i > 0:
@@ -1440,10 +1500,18 @@ class CCPlanner(object):
 
       q_robots_efo = [robot.GetDOFValues()[-1] for robot in self.robots]
 
-      T_place = intermediateplacement.ComputeFeasibleClosePlacements(
-        self.robots, query.qgrasps, query.q_robots_grasp, q_robots_efo, 
-        self.obj, v_goal.SE3_config_end.T, query.fmax, query.mu, 
-        self.pobj, placementType=2)
+      place_count = 5
+      perturb_first = False
+      for i in xrange(place_count):
+        if i > 0:
+          perturb_first = True
+        print i
+        T_place = intermediateplacement.ComputeFeasibleClosePlacements(
+          self.robots, query.qgrasps, query.q_robots_grasp, q_robots_efo, 
+          self.obj, v_goal.SE3_config_end.T, query.fmax, query.mu, 
+          self.pobj, placementType=2, perturb_first=perturb_first)
+        if T_place is not None:
+          break
       if T_place is None:
         self._output_info('No valid placement', 'red')
         return False
@@ -2020,10 +2088,11 @@ class CCPlanner(object):
     return status,        
 
   def _is_bad_regrasp_T(self, robot_indices, T_obj_regrasp):
+    # return False
     for robot_index in robot_indices:
       for T in self._query.regrasp_T_blacklist[robot_index]:
         if utils.SE3_distance(T, T_obj_regrasp, 
-                              1.0 / np.pi, 1.0) < self._query.step_size/8.0:
+                              1.0 / np.pi, 1.0) < self._query.step_size/20.0:
           self._output_info('Attempt to add regrasp but at bad T.',
                              bold=False)
           return True
@@ -2260,6 +2329,7 @@ class CCPlanner(object):
           timestamp_index += 1
       else:
         timestamp_index -= 1
+        print timestamp_index
         self.visualize_regrasp_traj(bimanual_traj, speed=speed)
 
   def shortcut(self, query, maxiters=[20, 20]):

@@ -19,7 +19,7 @@ if __name__ == "__main__":
   # Load OpenRAVE environment
   scene_file = model_path + '/worlds/bimanual_setup_regrasp_snapshot.env.xml'
   env = orpy.Environment()
-  env.SetViewer('qtcoin')
+  # env.SetViewer('qtcoin')
 
   Lshape = env.ReadKinBodyXMLFile(model_path + '/objects/Lshape_regrasp.kinbody.xml')
   env.Add(Lshape)
@@ -102,9 +102,11 @@ if __name__ == "__main__":
   embed()
   exit(0)
 
-  rep = 1
+  t_total = []
+  t_regrasp = []
+  rep = 50
   from time import time
-  import bimanual.planners.cc_planner_regrasp_placement as ccp 
+  import bimanual.planners.cc_planner_regrasp_placement_bm as ccp 
   ccplanner = ccp.CCPlanner(Lshape, p_Lshape, [left_robot, right_robot], 
                             plan_regrasp=True, debug=False)
   t = time() 
@@ -120,6 +122,12 @@ if __name__ == "__main__":
     res = ccplanner.solve(timeout=30)
     if res:
       i += 1
+    t_total.append(ccquery.running_time)
+    t_regrasp.append(ccquery.regrasp_planning_time)
+
+  t_total = np.array(t_total)
+  t_regrasp = np.array(t_regrasp)
+
   print (time()-t)/rep
 
   ccplanner.shortcut(ccquery, maxiters=[30, 60])

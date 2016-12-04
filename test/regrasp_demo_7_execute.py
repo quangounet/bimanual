@@ -10,13 +10,13 @@ from bimanual.utils import placement_utils as putils
 import pymanip.planningutils.utils as pymanip_utils
 from pymanip.planningutils import myobject, intermediateplacement, staticequilibrium
 # Utils
-from criros.utils import read_parameter
+# from criros.utils import read_parameter
 import ikea_openrave.utils as rave_utils
-import ikea_manipulation.utils as manip_utils
+# import ikea_manipulation.utils as manip_utils
 # Controllers
-from denso_control.controllers import JointPositionController
-from netft_control.controller import FTSensor
-from robotiq_control.controller import Robotiq
+# from denso_control.controllers import JointPositionController
+# from netft_control.controller import FTSensor
+# from robotiq_control.controller import Robotiq
 
 import os.path as path
 model_path = path.abspath(path.join(path.dirname(__file__), "../xml"))
@@ -34,7 +34,7 @@ class ClosedChainMotion(object):
     right_robot_name = 'right'
 
     # Load OpenRAVE environment
-    scene_file = model_path + '/worlds/bimanual_setup_regrasp.env.xml'
+    scene_file = model_path + '/worlds/bimanual_setup_regrasp_snapshot.env.xml'
     env = orpy.Environment()
     env.SetViewer('qtcoin')
     
@@ -93,22 +93,22 @@ class ClosedChainMotion(object):
     right_basemanip = orpy.interfaces.BaseManipulation(right_robot)
     right_taskmanip = orpy.interfaces.TaskManipulation(right_robot)
 
-    js_rate = read_parameter('/%s/joint_state_controller/publish_rate'
-                             % right_robot_name, 125.0)
-    T = 1. / js_rate
+    # js_rate = read_parameter('/%s/joint_state_controller/publish_rate'
+    #                          % right_robot_name, 125.0)
+    # T = 1. / js_rate
 
-    left_posController = JointPositionController(left_robot_name)
-    right_posController = JointPositionController(right_robot_name)
+    # left_posController = JointPositionController(left_robot_name)
+    # right_posController = JointPositionController(right_robot_name)
 
-    # Update robot states in openrave
-    manip_utils.update_rave_robots([left_robot, right_robot],
-                                   [left_posController, right_posController])
+    # # Update robot states in openrave
+    # manip_utils.update_rave_robots([left_robot, right_robot],
+    #                                [left_posController, right_posController])
 
-    left_gripper = Robotiq(left_robot_name)
-    right_gripper = Robotiq(right_robot_name)
-    left_gripper.open()
-    right_gripper.open()
-    right_ft_sensor = FTSensor(right_robot_name)
+    # left_gripper = Robotiq(left_robot_name)
+    # right_gripper = Robotiq(right_robot_name)
+    # left_gripper.open()
+    # right_gripper.open()
+    # right_ft_sensor = FTSensor(right_robot_name)
 
     rave_utils.scale_DOF_limits(left_robot, v=0.15)
     rave_utils.scale_DOF_limits(right_robot, v=0.15)
@@ -124,18 +124,18 @@ class ClosedChainMotion(object):
                         frame, qgrasp_right[0], qgrasp_right)
     q_right_start = right_manip.FindIKSolutions(T_right_gripper, orpy.IkFilterOptions.CheckEnvCollisions)[0]
 
-    # left_robot.SetActiveDOFValues(q_left_start)
-    # right_robot.SetActiveDOFValues(q_right_start)
+    left_robot.SetActiveDOFValues(q_left_start)
+    right_robot.SetActiveDOFValues(q_right_start)
 
-    left_traj = left_basemanip.MoveActiveJoints(goal=q_left_start, 
-                                                outputtrajobj=True)
-    manip_utils.execute_openrave_traj(left_robot, left_posController,
-                                      left_traj, T)
+    # left_traj = left_basemanip.MoveActiveJoints(goal=q_left_start, 
+    #                                             outputtrajobj=True)
+    # manip_utils.execute_openrave_traj(left_robot, left_posController,
+    #                                   left_traj, T)
 
-    right_traj = right_basemanip.MoveActiveJoints(goal=q_right_start,
-                                                  outputtrajobj=True)
-    manip_utils.execute_openrave_traj(right_robot, right_posController,
-                                      right_traj, T)
+    # right_traj = right_basemanip.MoveActiveJoints(goal=q_right_start,
+    #                                               outputtrajobj=True)
+    # manip_utils.execute_openrave_traj(right_robot, right_posController,
+    #                                   right_traj, T)
 
     embed()
     exit(0)

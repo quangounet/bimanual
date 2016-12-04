@@ -1247,7 +1247,7 @@ class CCPlanner(object):
     t_begin = time()
     query = self._query
     regrasp_count = 0
-
+    validate_configs = []
     for tree in (query.tree_start, query.tree_end):
       tree_type = tree.treetype
       vertex = query.database[tree.end_index]
@@ -1264,6 +1264,13 @@ class CCPlanner(object):
             self._output_info('Planning regrasp no.[{0}] for [{1}] tree' 
                               ' skipped'.format(regrasp_count, 
                               ['FW', 'BW'][tree_type]), 'cyan')
+            bimanual_regrasp_action = vertex.bimanual_regrasp_action
+            validate_configs.append(
+              [bimanual_regrasp_action.T_place, 
+              [bimanual_regrasp_action.bimanual_wpts['before'][0][-1],
+               bimanual_regrasp_action.bimanual_wpts['before'][1][-1]],
+              [index for index in bimanual_regrasp_action.regrasp_traj.trajs if bimanual_regrasp_action.regrasp_traj.trajs[index] is not None]
+            ])
             continue
           self._output_info('Planning regrasp no.[{0}] for [{1}] tree...'.format(regrasp_count, ['FW', 'BW'][tree_type]), 'yellow')
 
@@ -1284,7 +1291,6 @@ class CCPlanner(object):
                 perturb_first=perturb_first)
               if T_place is not None:
                 break
-
             if T_place is None:
               self._output_info('No valid placement, reforming trees...', 
                                 'red')
@@ -1316,6 +1322,7 @@ class CCPlanner(object):
             bimanual_regrasp_action.translation_traj['before'] = res[5]
 
 
+
             # wpts traj after placement
             res = self._move_to_placement(vertex.SE3_config_end, 
                                           SE3_config_place, 
@@ -1341,6 +1348,8 @@ class CCPlanner(object):
               bimanual_regrasp_action.bimanual_wpts['after'][0][0],
               bimanual_regrasp_action.bimanual_wpts['after'][1][0]]
 
+            regrasp_robot_indices = []
+
             # position everything correctly 
             self.obj.SetTransform(T_place)
             for robot, q_before in zip(self.robots,
@@ -1351,6 +1360,7 @@ class CCPlanner(object):
               q_before = q_robots_before_regrasp[i]
               q_after = q_robots_after_regrasp[i]
               if not np.isclose(q_before, q_after, rtol=1e-3).all():
+                regrasp_robot_indices.append(i)
                 robot = self.robots[i]
                 robot.SetDOFValues([0], [self._ndof]) # open gripper
                 if self._plan_regrasp:
@@ -1459,11 +1469,13 @@ class CCPlanner(object):
             for robot, q_before in zip(self.robots,
                                        q_robots_before_regrasp):
               robot.SetActiveDOFValues(q_before)
+            regrasp_robot_indices = []
             # plan regrasp
             for i in xrange(self._nrobots):
               q_before = q_robots_before_regrasp[i]
               q_after = q_robots_after_regrasp[i]
               if not np.isclose(q_before, q_after, rtol=1e-3).all():
+                regrasp_robot_indices.append(i)
                 robot = self.robots[i]
                 robot.SetDOFValues([0], [self._ndof])
                 if self._plan_regrasp:
@@ -1495,6 +1507,13 @@ class CCPlanner(object):
                     return False
                     
           vertex._fill_regrasp_action(bimanual_regrasp_action)
+
+          validate_configs.append(
+            [bimanual_regrasp_action.T_place, 
+            [bimanual_regrasp_action.bimanual_wpts['before'][0][-1],
+             bimanual_regrasp_action.bimanual_wpts['before'][1][-1]],
+            [index for index in bimanual_regrasp_action.regrasp_traj.trajs if bimanual_regrasp_action.regrasp_traj.trajs[index] is not None]
+          ])
 
     # connecting link
     if query.connecting_contain_endregrasp:
@@ -1576,10 +1595,12 @@ class CCPlanner(object):
                                  q_robots_before_regrasp):
         robot.SetActiveDOFValues(q_before)
       # plan regrasp
+      regrasp_robot_indices = []
       for i in xrange(self._nrobots):
         q_before = q_robots_before_regrasp[i]
         q_after = q_robots_after_regrasp[i]
         if not np.isclose(q_before, q_after, rtol=1e-3).all():
+          regrasp_robot_indices.append(i)
           robot = self.robots[i]
           robot.SetDOFValues([0], [self._ndof])
           if self._plan_regrasp:
@@ -1606,6 +1627,21 @@ class CCPlanner(object):
               return False
 
       query.connecting_bimanual_regrasp_action = bimanual_regrasp_action
+
+      validate_configs.append(
+        [bimanual_regrasp_action.T_place, 
+        [bimanual_regrasp_action.bimanual_wpts['before'][0][-1],
+         bimanual_regrasp_action.bimanual_wpts['before'][1][-1]],
+        [index for index in bimanual_regrasp_action.regrasp_traj.trajs if bimanual_regrasp_action.regrasp_traj.trajs[index] is not None]
+      ])
+    
+    self._output_info('Validating stability...', 'yellow')
+    for config in validate_configs:
+      is_stable = intermediateplacement.ValidateClosePlacements_eq(
+        self.robots, query.qgrasps, config[1],query.q_robots_grasp,
+        q_robots_efo, self.obj, config[0], query.fmax, query.mu, self.pobj,
+        config[2])
+      assert(is_stable)
 
     query.regrasp_planning_time += time() - t_begin
     return True

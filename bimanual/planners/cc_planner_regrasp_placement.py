@@ -4,6 +4,8 @@ This version is developped based on cc_planner_regrasp_transfer.py
 NB: For regrasp planner, a CCQuery object can only be sent to it for planning 
 once. If the planning does not yield a successful outcome, a new CCQuery is
 required for planning again.
+
+Placement computation in this planner does not take into account static equilibrium.
 """
 
 import openravepy as orpy

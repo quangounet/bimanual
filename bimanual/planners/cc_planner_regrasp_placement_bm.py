@@ -1,9 +1,5 @@
 """
-Closed-chain motion planner with multiple regrasping and placement for bimaual setup.
-This version is developped based on cc_planner_regrasp_transfer.py
-NB: For regrasp planner, a CCQuery object can only be sent to it for planning 
-once. If the planning does not yield a successful outcome, a new CCQuery is
-required for planning again.
+Only used for benchmarking.
 """
 
 import openravepy as orpy

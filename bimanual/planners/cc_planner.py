@@ -1,6 +1,5 @@
 """
-Closed-chain motion planner for bimual setup.
-This one plans object trajectory in SE(3) first.
+Closed-chain motion planner for bimual setup based on bi-directional RRT structure (not RRT-connect). The planner plans object trajectory in SE(3) and enforces the robots to track it.
 """
 
 import openravepy as orpy

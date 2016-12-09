@@ -855,12 +855,12 @@ class CCPlanner(object):
 
       # Check translational limit
       # NB: Can skip this step, since it's not likely the traj will exceed the limits given that p_beg and p_end are within limits
-      res = utils.check_translation_traj_str_limits(query.upper_limits, query.lower_limits, translation_traj_str)
-      if not res:
-        self._output_debug('TRAPPED : SE(3) trajectory exceeds translational'
-                           ' limit', bold=False)
-        status = TRAPPED
-        continue
+      # res = utils.check_translation_traj_str_limits(query.upper_limits, query.lower_limits, translation_traj_str)
+      # if not res:
+      #   self._output_debug('TRAPPED : SE(3) trajectory exceeds translational'
+      #                      ' limit', bold=False)
+      #   status = TRAPPED
+      #   continue
 
       translation_traj = TrajectoryFromStr(translation_traj_str)
 
@@ -964,11 +964,11 @@ class CCPlanner(object):
 
       # Check translational limit
       # NB: Can skip this step, since it's not likely the traj will exceed the limits given that p_beg and p_end are within limits
-      res = utils.check_translation_traj_str_limits(query.upper_limits, query.lower_limits, translation_traj_str)
-      if not res:
-        self._output_debug('TRAPPED : SE(3) trajectory exceeds translational limit', bold=False)
-        status = TRAPPED
-        continue
+      # res = utils.check_translation_traj_str_limits(query.upper_limits, query.lower_limits, translation_traj_str)
+      # if not res:
+      #   self._output_debug('TRAPPED : SE(3) trajectory exceeds translational limit', bold=False)
+      #   status = TRAPPED
+      #   continue
 
       translation_traj = TrajectoryFromStr(translation_traj_str)
 
@@ -1058,9 +1058,9 @@ class CCPlanner(object):
 
       # Check translational limit
       # NB: Can skip this step, since it's not likely the traj will exceed the limits given that p_beg and p_end are within limits
-      if not utils.check_translation_traj_str_limits(query.upper_limits, query.lower_limits, translation_traj_str):
-        self._output_debug('TRAPPED : SE(3) trajectory exceeds translational limit', bold=False)
-        continue
+      # if not utils.check_translation_traj_str_limits(query.upper_limits, query.lower_limits, translation_traj_str):
+      #   self._output_debug('TRAPPED : SE(3) trajectory exceeds translational limit', bold=False)
+      #   continue
 
       translation_traj = TrajectoryFromStr(translation_traj_str)
 
@@ -1141,9 +1141,9 @@ class CCPlanner(object):
 
       # Check translational limit
       # NB: Can skip this step, since it's not likely the traj will exceed the limits given that p_beg and p_end are within limits
-      if not utils.check_translation_traj_str_limits(query.upper_limits, query.lower_limits, translation_traj_str):
-        self._output_debug('TRAPPED : SE(3) trajectory exceeds translational limit', bold=False)
-        continue
+      # if not utils.check_translation_traj_str_limits(query.upper_limits, query.lower_limits, translation_traj_str):
+      #   self._output_debug('TRAPPED : SE(3) trajectory exceeds translational limit', bold=False)
+      #   continue
 
       translation_traj = TrajectoryFromStr(translation_traj_str)
 

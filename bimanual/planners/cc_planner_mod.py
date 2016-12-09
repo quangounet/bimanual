@@ -358,7 +358,7 @@ class CCQuery(object):
                q_robots_grasp, T_obj_start, T_obj_goal=None, nn=-1, 
                step_size=0.7, velocity_scale=1, interpolation_duration=None, 
                discr_timestep=5e-3, discr_check_timestep=None,
-               enable_bw=False):
+               enable_bw=False, my_object=None):
     """
     CCQuery constructor. It is independent of robots to be planned since robot
     info will be stored in planner itself.
@@ -471,6 +471,10 @@ class CCQuery(object):
     # Parameters    
     self.upper_limits = obj_translation_limits[0]
     self.lower_limits = obj_translation_limits[1]
+
+    # Experimental
+    self.probextendwhenconnectfailed = 0.3
+    self.my_object = my_object
     
   def generate_final_lie_traj(self):
     """
@@ -623,12 +627,25 @@ class CCPlanner(object):
     p_rand = np.asarray([_RNG.uniform(self._query.lower_limits[i], 
                                       self._query.upper_limits[i]) 
                         for i in xrange(3)])
+    pose = np.hstack([q_rand, p_rand])
+    Tobj = orpy.matrixFromPose(pose)
+
+    # transformed_vertices is the list of vertices of the convex hull of the object
+    # expressed in the global frame
+    transformed_vertices = [np.dot(Tobj, np.append(v, 1))[0:3] for v in self._query.my_object.vertices]
+    z_coords = [v[2] for v in transformed_vertices]
+    min_z = min(z_coords)
+    diff_z = self._query.my_object.Trest[2, 3] - min_z
+    if diff_z > 0:
+      p_rand[2] += (diff_z + 1e-6)
+      pose = np.hstack([q_rand, p_rand])
+      Tobj = orpy.matrixFromPose(pose)
     
     # pose = np.hstack([q_rand, p_rand])
     # Tcom = orpy.matrixFromPose(pose)
     # Tobj = np.dot(Tcom, self._TcomLocalInv)
-    # return SE3Config.from_matrix(Tobj)
-    return SE3Config(q_rand, p_rand)
+    return SE3Config.from_matrix(Tobj)
+    # return SE3Config(q_rand, p_rand)
   
   def _check_grasping_pose(self):
     """
@@ -785,7 +802,7 @@ class CCPlanner(object):
     else:
       return self._extend_bw(SE3_config)
 
-  def _extend_fw(self, SE3_config):
+  def _extend_fw(self, SE3_config, step_size=None):
     """
     Extend C{tree_start} (rooted at v_start) towards the given SE3 config.
 
@@ -800,6 +817,8 @@ class CCPlanner(object):
                              config
     """
     query = self._query
+    if step_size is None:
+      step_size = query.step_size
     status = TRAPPED
     nnindices = self._nearest_neighbor_indices(SE3_config, FW)
     for index in nnindices:
@@ -817,16 +836,16 @@ class CCPlanner(object):
 
       # Check if SE3_config is too far from v_near.SE3_config
       SE3_dist = utils.SE3_distance(SE3_config.T, v_near.config.SE3_config.T, 1.0 / np.pi, 1.0)
-      if SE3_dist <= query.step_size:
+      if SE3_dist <= step_size:
         status = REACHED
         new_SE3_config = SE3_config
       else:
         if not utils._is_close_axis(q_beg, q_end):
           q_end = -q_end
-        q_end = q_beg + query.step_size * (q_end - q_beg) / SE3_dist
+        q_end = q_beg + step_size * (q_end - q_beg) / SE3_dist
         q_end /= np.sqrt(np.dot(q_end, q_end))
 
-        p_end = p_beg + query.step_size * (p_end - p_beg) / SE3_dist
+        p_end = p_beg + step_size * (p_end - p_beg) / SE3_dist
 
         new_SE3_config = SE3Config(q_end, p_end, qd_end, pd_end)
         status = ADVANCED
@@ -892,7 +911,7 @@ class CCPlanner(object):
       return status
     return status
 
-  def _extend_bw(self, SE3_config):
+  def _extend_bw(self, SE3_config, step_size=None):
     """
     Extend C{tree_end} (rooted at v_goal) towards the given SE3 config.
 
@@ -907,6 +926,8 @@ class CCPlanner(object):
                              config
     """
     query = self._query
+    if step_size is None:
+      step_size = query.step_size
     status = TRAPPED
     nnindices = self._nearest_neighbor_indices(SE3_config, BW)
     for index in nnindices:
@@ -927,16 +948,16 @@ class CCPlanner(object):
 
       # Check if SE3_config is too far from v_near.SE3_config
       SE3_dist = utils.SE3_distance(SE3_config.T, v_near.config.SE3_config.T, 1.0 / np.pi, 1.0)
-      if SE3_dist <= query.step_size:
+      if SE3_dist <= step_size:
         status = REACHED
         new_SE3_config = SE3_config
       else:
         if not utils._is_close_axis(q_beg, q_end):
           q_beg = -q_beg
-        q_beg = q_end + query.step_size * (q_beg - q_end) / SE3_dist
+        q_beg = q_end + step_size * (q_beg - q_end) / SE3_dist
         q_beg /= np.sqrt(np.dot(q_beg, q_beg))
 
-        p_beg = p_end + query.step_size * (p_beg - p_end) / SE3_dist
+        p_beg = p_end + step_size * (p_beg - p_end) / SE3_dist
 
         new_SE3_config = SE3Config(q_beg, p_beg, qd_beg, pd_beg)
         status = ADVANCED
@@ -1032,6 +1053,7 @@ class CCPlanner(object):
     v_test = query.tree_start.vertices[-1]
     nnindices = self._nearest_neighbor_indices(v_test.config.SE3_config, BW)
     status = TRAPPED
+    modified = False
     for index in nnindices:
       v_near = query.tree_end[index]
 
@@ -1048,6 +1070,12 @@ class CCPlanner(object):
 
       p_end  = v_near.config.SE3_config.p
       pd_end = v_near.config.SE3_config.pd
+
+      # SE(3) distance
+      SE3_dist = utils.SE3_distance(v_test.config.SE3_config.T,
+                                    v_near.config.SE3_config.T,
+                                    1.0 / np.pi, 1.0)
+      # print colorize("SE(3) distance = {0} x stepsize".format(SE3_dist/query.step_size), 'yellow')
       
       # Interpolate the object trajectory
       R_beg = orpy.rotationMatrixFromQuat(q_beg)
@@ -1090,6 +1118,7 @@ class CCPlanner(object):
         continue
 
       # Now the connection is successful
+      # print colorize("connection successful: SE(3) distance = {0}xstepsize".format(SE3_dist/query.step_size), 'green')
       query.tree_end.vertices.append(v_near)
       query.connecting_rot_traj         = rot_traj
       query.connecting_translation_traj = translation_traj
@@ -1097,6 +1126,12 @@ class CCPlanner(object):
       query.connecting_timestamps       = timestamps
       status = REACHED
       return status
+    # All connection attempts have failed.
+    if _RNG.random() <= query.probextendwhenconnectfailed:
+      # Try to extend tree_end toward the newly added vertex on tree_start
+      print colorize("Try extend_bw after all connect_fw failed", 'yellow')
+      status = self._extend_bw(v_test.config.SE3_config, step_size=0.3)
+
     return status        
 
 
@@ -1115,6 +1150,7 @@ class CCPlanner(object):
     v_test = query.tree_end.vertices[-1]
     nnindices = self._nearest_neighbor_indices(v_test.config.SE3_config, FW)
     status = TRAPPED
+    modified = False
     for index in nnindices:
       v_near = query.tree_start[index]
 
@@ -1131,6 +1167,12 @@ class CCPlanner(object):
 
       p_beg  = v_near.config.SE3_config.p
       pd_beg = v_near.config.SE3_config.pd
+
+      # SE(3) distance
+      SE3_dist = utils.SE3_distance(v_test.config.SE3_config.T,
+                                    v_near.config.SE3_config.T,
+                                    1.0 / np.pi, 1.0)
+      # print colorize("SE(3) distance = {0} x stepsize".format(SE3_dist/query.step_size), 'yellow')
       
       # Interpolate the object trajectory
       R_beg = orpy.rotationMatrixFromQuat(q_beg)
@@ -1173,6 +1215,7 @@ class CCPlanner(object):
         continue
 
       # Now the connection is successful
+      # print colorize("connection successful: SE(3) distance = {0}xstepsize".format(SE3_dist/query.step_size), 'green')
       query.tree_start.vertices.append(v_near)
       query.connecting_rot_traj         = rot_traj
       query.connecting_translation_traj = translation_traj
@@ -1180,6 +1223,12 @@ class CCPlanner(object):
       query.connecting_timestamps       = timestamps
       status = REACHED
       return status
+    # All connection attempts have failed.
+    if _RNG.random() <= query.probextendwhenconnectfailed:
+      # Try to extend tree_end toward the newly added vertex on tree_start
+      print colorize("Try extend_fw after all connect_bw failed", 'yellow')
+      status = self._extend_fw(v_test.config.SE3_config, step_size=0.5)
+      
     return status        
 
   

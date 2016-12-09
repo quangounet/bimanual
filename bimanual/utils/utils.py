@@ -759,6 +759,21 @@ def reverse_traj(trajectroy):
   
   return Trajectory.PiecewisePolynomialTrajectory(newchunkslist)
 
+def reverse_cctraj(cctraj):
+  """Reverse the given closed-chain trajectory. This function returns 4 objects needed for
+  constructing a closed-chain trajectory. It does not return directly a closed-chain
+  trajectory since currently CCTrajectory is usually defined on a per-file basis.
+
+  """
+  lie_traj = reverse_traj(cctraj.lie_traj)
+  translation_traj = reverse_traj(cctraj.translation_traj)
+  bimanual_wpts = cctraj.bimanual_wpts[::-1]
+  duration = cctraj.timestamps[-1]
+  timestamps = np.asarray(cctraj.timestamps[::-1]) - duration
+  timestamps = timestamps.tolist()
+  return lie_traj, translation_traj, bimanual_wpts, timestamps
+  
+
 ########################### Manipulator related ###########################
 def compute_endeffector_transform(manip, q):
   """

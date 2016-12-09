@@ -1,5 +1,5 @@
 # bimanual
-Python library for closed-chain and regrasp motion planning for bimanual robotic setup.
+Python library for closed-chain motion planning for bimanual robotic setup.
 
 ## Dependencies
 

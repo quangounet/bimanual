@@ -780,32 +780,30 @@ def compute_endeffector_transform(manip, q):
   return T
 
 def compute_bimanual_goal_configs(robots, obj, q_robots_cur, q_robots_grasp, 
-                                  T_obj_cur, T_obj_goal, seeds=[None, None], 
-                                  reset=True):
+                                  T_obj_cur, T_obj_goal, 
+                                  IK_indices=[None, None], reset=True):
   """
   Return one set of IK solutions of the given robot grasping the 
   given object, when the object moves to a new transformation.
 
-  @type          robots: list of openravepy.Robot
-  @param         robots: A list of robots to be used.
-  @type             obj: openravepy.KinBody
-  @param            obj: Object grasped.
-  @type    q_robots_cur: list
-  @param   q_robots_cur: Current configuration of the robots.
+  @type  robots: list of openravepy.Robot
+  @param robots: A list of robots to be used.
+  @type  obj: openravepy.KinBody
+  @param obj: Object grasped.
+  @type  q_robots_cur: list
+  @param q_robots_cur: Current configuration of the robots.
   @type  q_robots_grasp: list
   @param q_robots_grasp: Current configuration of the grippers.
-  @type       T_obj_cur: numpy.ndarray
-  @param      T_obj_cur: Current transformation of the obj.
-  @type      T_obj_goal: numpy.ndarray
-  @param     T_obj_goal: Goal transformation of the obj.
-  @type           seeds: list
-  @param          seeds: Index to speficy which IK solution to return, if not
-                         set, return the closest ones.
-  @type           reset: bool
-  @param          reset: Whether to restore all robots and objects to their
-                         original pose after computation.
+  @type  T_obj_cur: numpy.ndarray
+  @param T_obj_cur: Current transformation of the obj.
+  @type  T_obj_goal: numpy.ndarray
+  @param T_obj_goal: Goal transformation of the obj.
+  @type  IK_indices: list
+  @param IK_indices: Index to speficy which IK solution to return, if not set, return the closest ones.
+  @type  reset: bool
+  @param reset: Whether to restore all robots and objects to their original pose after computation.
 
-  @rtype:  list
+  @rtype: list
   @return: Goal configurations of the robots.
   """
   def restore():
@@ -821,19 +819,19 @@ def compute_bimanual_goal_configs(robots, obj, q_robots_cur, q_robots_grasp,
     robot.Enable(False)
 
   q_robots_new = []
-  for (robot, q_robot_cur, q_robot_grasp, seed) in zip(robots, q_robots_cur,
-                                                       q_robots_grasp, seeds):
+  for (robot, q_robot_cur, q_robot_grasp, index) in \
+    zip(robots, q_robots_cur, q_robots_grasp, IK_indices):
     robot.Enable(True)
     robot.SetActiveDOFValues(q_robot_cur)
     manip = robot.GetActiveManipulator()
     T_ef_cur = compute_endeffector_transform(manip, q_robot_cur)
     T_ef_new = np.dot(T_obj_goal, np.dot(np.linalg.inv(T_obj_cur), T_ef_cur))
-    if seed is None:
+    if index is None:
       q_robot_new = manip.FindIKSolution(
         T_ef_new, orpy.IkFilterOptions.CheckEnvCollisions)
     else:
       q_robot_new = manip.FindIKSolutions(
-        T_ef_new, orpy.IkFilterOptions.CheckEnvCollisions)[seed]
+        T_ef_new, orpy.IkFilterOptions.CheckEnvCollisions)[index]
     if q_robot_new is None:
       restore()
       print robot.GetName() + ': No IK solution exists.'

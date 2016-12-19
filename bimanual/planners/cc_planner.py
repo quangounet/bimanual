@@ -84,25 +84,27 @@ class CCTrajectory(object):
   a trajectory in closed-chain motions.
   """
 
-  def __init__(self, lie_traj, translation_traj, bimanual_wpts, timestamps):
+  def __init__(self, lie_traj, translation_traj, bimanual_wpts, timestamps,
+               timestep):
     """
     CCTrajectory constructor.
 
-    @type          lie_traj: lie.LieTraj
-    @param         lie_traj: Trajectory of the manipulated object in SO(3) space.
-    @type  translation_traj: TOPP.Trajectory.PiecewisePolynomialTrajectory
+    @type  lie_traj: lie.LieTraj
+    @param lie_traj: Trajectory of the manipulated object in SO(3) space.
+    @type translation_traj: TOPP.Trajectory.PiecewisePolynomialTrajectory
     @param translation_traj: Translational trajectory of the manipulated object.
-    @type     bimanual_wpts: list
-    @param    bimanual_wpts: Trajectory of bimanual robots in form 
-                             of waypoints list.
-    @type        timestamps: list
-    @param       timestamps: Timestamps for time parameterization 
-                             of C{bimanual_wpts}.
+    @type  bimanual_wpts: list
+    @param bimanual_wpts: Trajectory of bimanual robots in form of waypoints list.
+    @type  timestamps: list
+    @param timestamps: Timestamps for time parameterization of C{bimanual_wpts}.
+    @type  timestep: float
+    @param timestep: Time resolution of bimanual_wpts.
     """
     self.lie_traj         = lie_traj
     self.translation_traj = translation_traj
     self.bimanual_wpts    = bimanual_wpts
     self.timestamps       = timestamps[:]
+    self.timestep         = timestep
       
 
 class CCConfig(object):
@@ -565,7 +567,7 @@ class CCQuery(object):
     self.generate_final_timestamps()
     self.generate_final_bimanual_wpts()
     
-    self.cctraj = CCTrajectory(self.lie_traj, self.translation_traj, self.bimanual_wpts, self.timestamps)
+    self.cctraj = CCTrajectory(self.lie_traj, self.translation_traj, self.bimanual_wpts, self.timestamps, self.discr_timestep)
 
 
 class CCPlanner(object):
@@ -1357,7 +1359,7 @@ class CCPlanner(object):
     left_wpts  = cctraj.bimanual_wpts[0]
     right_wpts = cctraj.bimanual_wpts[1]
 
-    sampling_step = timestamps[1] - timestamps[0]
+    sampling_step = cctraj.timestep
     refresh_step  = sampling_step / speed
 
     T_obj = np.eye(4)
@@ -1486,7 +1488,7 @@ class CCPlanner(object):
     self._output_info('Shortcutting done. Total running time : {0} s.'. format(t_end - t_begin), 'green')
     self._output_debug('Successful: {0} times. In collision: {1} times. Not shorter: {2} times. Not reachable: {3} times. Not continuous: {4} times.'.format(successful_count, in_collision_count, not_shorter_count, not_reachable_count, not_continuous_count), 'yellow')
 
-    query.cctraj = CCTrajectory(lie_traj, translation_traj, [left_wpts, right_wpts], timestamps)
+    query.cctraj = CCTrajectory(lie_traj, translation_traj, [left_wpts, right_wpts], timestamps, query.discr_timestep)
     
   def _enable_robots_collision(self, enable=True):
     """

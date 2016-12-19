@@ -4,6 +4,7 @@ import numpy as np
 import openravepy as orpy
 import ikea_openrave.utils as rave_utils
 from bimanual.utils import utils
+from bimanual.utils.loggers import TextColors
 from time import time
 from IPython import embed
 
@@ -82,8 +83,9 @@ if __name__ == "__main__":
   embed()
   exit(0)
 
+  logger = TextColors(TextColors.INFO)
   import bimanual.planners.cc_planner as ccp
-  ccplanner = ccp.CCPlanner(cage, [left_robot, right_robot], debug=False)
+  ccplanner = ccp.CCPlanner(cage, [left_robot, right_robot], logger=logger)
   ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, 
                         q_robots_goal, q_robots_grasp, T_obj_start, nn=2,
                         step_size=0.5, velocity_scale=velocity_scale,

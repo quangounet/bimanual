@@ -8,6 +8,7 @@ import random
 from time import time, sleep
 import traceback
 import TOPP
+import cPickle as pickle
 from bimanual.utils.loggers import TextColors
 from bimanual.utils import utils, heap, lie
 from IPython import embed
@@ -105,7 +106,21 @@ class CCTrajectory(object):
     self.bimanual_wpts    = bimanual_wpts
     self.timestamps       = timestamps[:]
     self.timestep         = timestep
-      
+
+  @staticmethod
+  def serialize(traj):
+    """
+    Serialize CCTrajectory object into a string using cPickle.
+    """
+    return pickle.dumps(traj)
+
+  @staticmethod
+  def deserialize(traj_str):
+    """
+    Generate a CCTrajectory object from a serialized string.
+    """
+    return pickle.loads(traj_str)
+
 
 class CCConfig(object):
   """
@@ -1441,7 +1456,7 @@ class CCPlanner(object):
 
     t_end = time()
     self.reset_config(query)
-    self.logger.loginfo('Shortcutting done. Total running time : {0} s.'. format(t_end - t_begin))
+    self.logger.loginfo('Shortcutting done. Total running time: {0}s.'. format(t_end - t_begin))
     self.logger.logdebug('Successful: {0} times. In collision: {1} times. Not shorter: {2} times. Not reachable: {3} times. Not continuous: {4} times.'.format(successful_count, in_collision_count, not_shorter_count, not_reachable_count, not_continuous_count))
 
     query.cctraj = CCTrajectory(lie_traj, translation_traj, [left_wpts, right_wpts], timestamps, query.discr_timestep)

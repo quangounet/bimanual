@@ -1,5 +1,5 @@
 """
-Utility functions used for motion planners in ikea_planner package.
+Utility functions used for bimanual package.
 """
 
 import openravepy as orpy
@@ -848,7 +848,54 @@ def compute_bimanual_goal_configs(robots, obj, q_robots_cur, q_robots_grasp,
 
   restore()
   return q_robots_new
-  
+
+def disable_gripper(robots):
+  """
+  Set active DOFs of all robots in the given list to match their active 
+  manipulator.
+
+  @type  robots: list of openravepy.Robot
+  @param robots: A list of robots to be configured.
+  """
+  for robot in robots:
+    manip = robot.GetActiveManipulator()
+    robot.SetActiveDOFs(manip.GetArmIndices())
+
+def load_IK_model(robots):
+  """
+  Load openrave IKFast model for all robots in the given list.
+
+  @type  robots: list of openravepy.Robot
+  @param robots: A list of robots to be loaded.
+  """
+  for robot in robots:    
+    ikmodel = orpy.databases.inversekinematics.InverseKinematicsModel(robot, iktype=orpy.IkParameterization.Type.Transform6D)    
+    if (not ikmodel.load()):
+      robot_name = robot.GetName()
+      print('Robot:[' + robot_name + '] IKFast not found. Generating IKFast solution...')
+      ikmodel.autogenerate()
+
+def scale_DOF_limits(robot, v=1, a=1):
+  """
+  Adjust DOF limits of the given denso robot by the specified scale w.r.t. 
+  its original limits (obtained from denso_vs060.dae).
+
+  @type  robot: openravepy.Robot
+  @param robot: Robot to be configured.
+  @type  v: float
+  @param v: Velocity scale.
+  @type  a: float
+  @param a: Acceleration scale.
+  """
+  original_velocity_limits = np.array(
+    [3.926990816987241,   2.617993877991494,   2.858325715991114,
+     3.926990816987241,   3.021688533977783,   6.283185307179586,  10. ])
+  original_acceleration_limits = np.array(
+    [19.733565187673889,  16.84469620977287 ,  20.70885517368832 ,
+     20.966465771282682,  23.72286425895733 ,  33.510321638291117,  50.])
+  robot.SetDOFVelocityLimits(original_velocity_limits * v)
+  robot.SetDOFAccelerationLimits(original_acceleration_limits * a)
+
 ########################### Visualization ###########################
 def visualize_config_transition(robot, q_start, q_goal, step_num=50, 
                                 timestep=0.05):
@@ -858,36 +905,3 @@ def visualize_config_transition(robot, q_start, q_goal, step_num=50,
   for i in xrange(step_num+1):
     robot.SetActiveDOFValues(q_start + delta * i)
     sleep(timestep)
-
-########################### Output formatting ###########################
-colors = dict()
-colors['black'] = 0
-colors['red'] = 1
-colors['green'] = 2
-colors['yellow'] = 3
-colors['blue'] = 4
-colors['magenta'] = 5
-colors['cyan'] = 6
-colors['white'] = 7
-def colorize(string, color='white', bold=True):
-  """
-  Return a string by formatting the given one with specified color and 
-  boldness.
-
-  @type  string: str
-  @param string: String to be formatted.
-  @type   color: str
-  @param  color: Color specification.
-  @type    bold: bool
-  @param   bold: B{True} if the string is to be formatted in bold.
-
-  @rtype:  str
-  @return: The formatted string.
-  """
-  new_string = '\033['
-  new_string += (str(int(bold)) + ';')
-  new_string += ('3' + str(colors[color]))
-  new_string += 'm'
-  new_string += string
-  new_string += '\033[0m' # reset the subsequent text back to normal
-  return new_string

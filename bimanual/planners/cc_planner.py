@@ -11,7 +11,6 @@ import TOPP
 import cPickle as pickle
 from bimanual.utils.loggers import TextColors
 from bimanual.utils import utils, heap, lie
-from IPython import embed
 
 # Global parameters
 FW       = 0
@@ -671,7 +670,42 @@ class CCPlanner(object):
     """
     self._query = query
     self._check_grasping_pose()
+
+    # query validity check
+    # translational limit
+    T_obj_start = query.v_start.config.SE3_config.T
+    T_obj_goal = query.v_goal.config.SE3_config.T
+    if ((T_obj_start[:3,3] < query.lower_limits).any() or 
+        (T_obj_start[:3,3] > query.upper_limits).any() or 
+        (T_obj_goal[:3,3] < query.lower_limits).any() or 
+        (T_obj_goal[:3,3] > query.upper_limits).any()):
+      self.logger.logerr('Start or goal object translation exceeds given limits.')
+      return False
+    # collision
+    self.loose_gripper(query)
+    self.obj.SetTransform(T_obj_start)
+    self.robots[0].SetActiveDOFValues(query.v_start.config.q_robots[0])
+    self.robots[1].SetActiveDOFValues(query.v_start.config.q_robots[1])
+    in_collision = False
+    in_collision |= self.env.CheckCollision(self.obj)
+    for robot in self.robots:
+      in_collision |= self.env.CheckCollision(robot)
+      in_collision |= robot.CheckSelfCollision()
+    self.obj.SetTransform(T_obj_goal)
+    self.robots[0].SetActiveDOFValues(query.v_goal.config.q_robots[0])
+    self.robots[1].SetActiveDOFValues(query.v_goal.config.q_robots[1])
+    in_collision |= self.env.CheckCollision(self.obj)
+    for robot in self.robots:
+      in_collision |= self.env.CheckCollision(robot)
+      in_collision |= robot.CheckSelfCollision()
+    self.reset_config(query)
+    if in_collision:
+      self.logger.logerr('Start or goal configuration in collision.')
+      return False
+
     self.bimanual_obj_tracker.update_vmax()
+    self.logger.loginfo('Query set successfully.')
+    return True
 
   def solve(self, timeout=20):
     """

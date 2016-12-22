@@ -2,7 +2,6 @@
 import pickle
 import numpy as np
 import openravepy as orpy
-import ikea_openrave.utils as rave_utils
 from bimanual.utils import utils
 from bimanual.utils.loggers import TextColors
 from time import time
@@ -28,8 +27,8 @@ if __name__ == "__main__":
   env.Add(cage)
 
   velocity_scale = 0.5
-  rave_utils.scale_DOF_limits(left_robot, v=velocity_scale)
-  rave_utils.scale_DOF_limits(right_robot, v=velocity_scale)
+  utils.scale_DOF_limits(left_robot, v=velocity_scale)
+  utils.scale_DOF_limits(right_robot, v=velocity_scale)
 
   # Add collision checker
   env.SetCollisionChecker(orpy.RaveCreateCollisionChecker(env, 'ode'))
@@ -42,8 +41,8 @@ if __name__ == "__main__":
   right_basemanip = orpy.interfaces.BaseManipulation(right_robot)
   right_taskmanip = orpy.interfaces.TaskManipulation(right_robot)
 
-  rave_utils.disable_gripper([left_robot, right_robot])
-  rave_utils.load_IK_model([left_robot, right_robot])
+  utils.disable_gripper([left_robot, right_robot])
+  utils.load_IK_model([left_robot, right_robot])
 
   cage.SetTransform(np.array(
       [[ 0.9932,  0.    ,  0.1168,  0.3328],
@@ -62,7 +61,6 @@ if __name__ == "__main__":
   left_robot.WaitForController(0)
   right_taskmanip.CloseFingers()
   right_robot.WaitForController(0)
-
 
   ################## closed chain planning ###################
   obj_translation_limits = [[0.6, 0.25, 0.91], [0.28, -0.35, 0.136]]
@@ -88,11 +86,11 @@ if __name__ == "__main__":
   ccplanner = ccp.CCPlanner(cage, [left_robot, right_robot], logger=logger)
   ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, 
                         q_robots_goal, q_robots_grasp, T_obj_start, nn=2,
-                        step_size=0.5, velocity_scale=velocity_scale,
+                        step_size=0.3, velocity_scale=velocity_scale,
                         enable_bw=True)
   ccplanner.set_query(ccquery)
   res = ccplanner.solve(timeout=20)
 
   ###################### Visualization #######################
   ccplanner.shortcut(ccquery, maxiter=20)
-  ccplanner.visualize_cctraj(ccquery.cctraj, speed=5)
+  ccplanner.visualize_cctraj(ccquery.cctraj, speed=1)

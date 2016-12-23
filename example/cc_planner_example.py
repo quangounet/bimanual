@@ -82,11 +82,12 @@ if __name__ == "__main__":
   exit(0)
 
   logger = TextColors(TextColors.INFO)
-  import bimanual.planners.cc_planner as ccp
-  ccplanner = ccp.CCPlanner(cage, [left_robot, right_robot], logger=logger)
+  import bimanual.planners.cc_planner_connect as ccp
+  ccplanner = ccp.CCPlanner(cage, [left_robot, right_robot], logger=logger, 
+                            planner_type='BiRRT')
   ccquery = ccp.CCQuery(obj_translation_limits, q_robots_start, 
                         q_robots_goal, q_robots_grasp, T_obj_start, nn=2,
-                        step_size=0.3, velocity_scale=velocity_scale,
+                        step_size=0.5, velocity_scale=velocity_scale,
                         enable_bw=True)
   ccplanner.set_query(ccquery)
   res = ccplanner.solve(timeout=20)

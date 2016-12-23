@@ -1,12 +1,11 @@
 """
-Closed-chain motion planner for bimual setup based on bi-directional RRT structure (not RRT-connect). The planner plans object trajectory in SE(3) and enforces the robots to track it.
+Closed-chain single-query motion planner for bimanual robotic setup with Denso VS060.
 """
 
 import openravepy as orpy
 import numpy as np
 import random
 from time import time, sleep
-import traceback
 import TOPP
 import cPickle as pickle
 from bimanual.utils.loggers import TextColors
@@ -34,14 +33,14 @@ class SE3Config(object):
     """
     SE3Config constructor.
 
-    @type   q: numpy.ndarray
-    @param  q: Quaternion, (s, vx, vy, vz).
-    @type   p: numpy.ndarray
-    @param  p: Translation 3-vector, (x, y, z).
+    @type  q: numpy.ndarray
+    @param q: Quaternion, (s, vx, vy, vz).
+    @type  p: numpy.ndarray
+    @param p: Translation 3-vector, (x, y, z).
     @type  qd: numop.ndarray
     @param qd: Time derivative of q.
     @type  pd: numpy.ndarray
-    @param pd: Time derivative of p (translational velocity.
+    @param pd: Time derivative of p (translational velocity).
     """
     quat_length = np.linalg.norm(q)
     assert(quat_length > 0)
@@ -67,7 +66,7 @@ class SE3Config(object):
 
     @type  T: numpy.ndarray
     @param T: 4x4 transformation matrix
-    @rtype:  SE3Config
+    @rtype: SE3Config
     @return: An SE3Config object initialized using T.
     """    
     if T is None:
@@ -143,7 +142,7 @@ class CCConfig(object):
 class CCVertex(object):  
   """
   Vertex of closed-chain motion. It stores all information required
-  to generated a RRT tree (C{CCTree}) in this planner.
+  to generated a C{CCTree} in this planner.
   """
 
   def __init__(self, config):
@@ -163,7 +162,7 @@ class CCVertex(object):
     self.bimanual_wpts    = []
     self.timestamps       = []
     self.level            = 0
-
+    self.invisible        = False
 
 class CCTree(object):  
   """
@@ -191,7 +190,7 @@ class CCTree(object):
   def __getitem__(self, index):
     return self.vertices[index]        
   
-  def add_vertex(self, v_new, parent_index, rot_traj, translation_traj, bimanual_wpts, timestamps):
+  def add_vertex(self, v_new, parent_index, rot_traj, translation_traj, bimanual_wpts, timestamps, invisible=False):
     """
     Add a C{CCVertex} to the tree.
 
@@ -215,6 +214,7 @@ class CCTree(object):
     v_new.timestamps       = timestamps
     v_new.index            = self.length
     v_new.level            = self.vertices[parent_index].level + 1
+    v_new.invisible        = invisible
     
     self.vertices.append(v_new)
     self.length += 1
@@ -228,7 +228,7 @@ class CCTree(object):
     @type  end_index: int
     @param end_index: Index of the vertex used as one end of the connection. The other end is C{v_root}.
 
-    @rtype:  list
+    @rtype: list
     @return: A list containing all C{rot_traj} of all vertices, starting from vertex with a earlier C{timestamp}.
     """
     rot_traj_list = []
@@ -253,7 +253,7 @@ class CCTree(object):
     @type  end_index: int
     @param end_index: Index of the vertex used as one end of the connection. The other end is C{v_root}.
 
-    @rtype:  list
+    @rtype: list
     @return: A list containing rotation matrices of all vertices, starting from vertex with a earlier C{timestamp}.
     """
     rot_mat_list = []
@@ -279,7 +279,7 @@ class CCTree(object):
     @type  end_index: int
     @param end_index: Index of the vertex used as one end of the connection. The other end is C{v_root}.
 
-    @rtype:  list
+    @rtype: list
     @return: A list containing all C{translation_traj} of all vertices, starting from vertex with a earlier C{timestamp}.
     """
     translation_traj_list = []
@@ -304,7 +304,7 @@ class CCTree(object):
     @type  end_index: int
     @param end_index: Index of the vertex used as one end of the connection. The other end is C{v_root}.
 
-    @rtype:  list
+    @rtype: list
     @return: A list containing all C{bimanual_wpts} of all vertices, starting from vertex with a earlier C{timestamp}.
     """
     bimanual_wpts_list = [[], []]
@@ -331,7 +331,7 @@ class CCTree(object):
     @type  end_index: int
     @param end_index: Index of the vertex used as one end of the connection. The other end is C{v_root}.
 
-    @rtype:  list
+    @rtype: list
     @return: A list containing all C{timestamps} of all vertices, starting from vertex with a earlier C{timestamp}.
     """
     timestamps_list = []
@@ -564,7 +564,8 @@ class CCPlanner(object):
   - two identical robots
   """
   
-  def __init__(self, manip_obj, robots, logger=None):
+  def __init__(self, manip_obj, robots, planner_type='RRTConnect', 
+               logger=None):
     """
     CCPlanner constructor. It requires infomation of the robots and the object
     being manipulated.
@@ -573,12 +574,18 @@ class CCPlanner(object):
     @param manip_obj: Object to be manipulated in the closed-chain motion. It connects the end-effectors of the two robots.
     @type  robots: list of openravepy.Robot
     @param robots: List of robots for the closed-chain motion.
+    @type  planner_type: str
+    @param planner_type: Available planner type: 'BiRRT' and 'RRTConnect'.
     @type  logger: logger
     @param logger: Logger for CCPlanner.
     """
     self.obj = manip_obj
     self.robots = robots
     self.manips = []
+    if planner_type not in ('RRTConnect', 'BiRRT'):
+      raise CCPlannerException('planner_type has to be either RRTConnect '
+                               'or BiRRT.')
+    self.planner_type = planner_type
     if logger is None:
       self.logger = TextColors()
     else:
@@ -603,7 +610,7 @@ class CCPlanner(object):
     extending a vertex on a tree to this config, we do not use
     this config directly.
 
-    @rtype:  SE3Config
+    @rtype: SE3Config
     @return: A random SE3 Configuration.
     """ 
     q_rand = lie.RandomQuat()
@@ -654,7 +661,7 @@ class CCPlanner(object):
     and gripper in planning.
 
     @type  query: CCQuery
-    @param query: Query used to extract the grippers' configuration when grasping the object, which is taken as a reference for loosing the gripper.
+    @param query: Query used to extract the grippers' grasping configuration.
     """
     for i in xrange(2):
       self.robots[i].SetDOFValues([query.q_robots_grasp[i]*0.7],
@@ -714,7 +721,7 @@ class CCPlanner(object):
     @type  timeout: float
     @param timeout: Time limit for solving the query.
 
-    @rtype:  int
+    @rtype: int
     @return: Whether the query is solved within given time limit.
     """
     query = self._query
@@ -793,7 +800,7 @@ class CCPlanner(object):
     @type  SE3_config: SE3Config
     @param SE3_config: Configuration towards which the tree will be extended.
 
-    @rtype:  int
+    @rtype: int
     @return: Result of this extension attempt. Possible values:
       - B{TRAPPED}:  when the extension fails
       - B{REACHED}:  when the extension reaches the given config
@@ -811,7 +818,7 @@ class CCPlanner(object):
     @type  SE3_config: SE3Config
     @param SE3_config: Configuration towards which the tree will be extended.
 
-    @rtype:  int
+    @rtype: int
     @return: Result of this extension attempt. Possible values:
       - B{TRAPPED}:  when the extension fails
       - B{REACHED}:  when the extension reaches the given config
@@ -819,13 +826,13 @@ class CCPlanner(object):
     """
     query = self._query
     status = TRAPPED
-    nnindices = self._nearest_neighbor_indices(SE3_config, FW)
+    nnindices = self._nearest_neighbor_indices(SE3_config, FW, self.planner_type)
     for index in nnindices:
       v_near = query.tree_start[index]
       
       q_beg  = v_near.config.SE3_config.q
-      qd_beg = v_near.config.SE3_config.qd
       p_beg  = v_near.config.SE3_config.p
+      qd_beg = v_near.config.SE3_config.qd
       pd_beg = v_near.config.SE3_config.pd
 
       q_end = SE3_config.q
@@ -911,7 +918,7 @@ class CCPlanner(object):
     @type  SE3_config: SE3Config
     @param SE3_config: Configuration towards which the tree will be extended.
 
-    @rtype:  int
+    @rtype: int
     @return: Result of this extension attempt. Possible values:
       - B{TRAPPED}:  when the extension fails
       - B{REACHED}:  when the extension reaches the given config
@@ -919,16 +926,13 @@ class CCPlanner(object):
     """
     query = self._query
     status = TRAPPED
-    nnindices = self._nearest_neighbor_indices(SE3_config, BW)
+    nnindices = self._nearest_neighbor_indices(SE3_config, BW, self.planner_type)
     for index in nnindices:
       v_near = query.tree_end[index]
       
-      # quaternion
       q_end  = v_near.config.SE3_config.q
-      qd_end = v_near.config.SE3_config.qd
-      
-      # translation
       p_end  = v_near.config.SE3_config.p
+      qd_end = v_near.config.SE3_config.qd
       pd_end = v_near.config.SE3_config.pd
 
       q_beg = SE3_config.q
@@ -1012,33 +1016,41 @@ class CCPlanner(object):
     """
     Connect C{tree_start} and C{tree_end} in C{self._query}.
 
-    @rtype:  int
+    @rtype: int
     @return: Result of this connecting attempt. Possible values:
-      - B{TRAPPED}: connection successful
-      - B{REACHED}: connection failed
+             - B{TRAPPED}: connect failed
+             - B{REACHED}: connect succeeded
     """
-    if (self._query.iteration_count - 1) % 2 == FW or not self._query.enable_bw:
-      # tree_start has just been extended
-      return self._connect_fw()
-    else:
-      # tree_end has just been extended
-      return self._connect_bw()
+    if self.planner_type == 'RRTConnect':
+      if (self._query.iteration_count - 1) % 2 == FW or not self._query.enable_bw:
+        # tree_start has just been extended
+        return self._connect_fw_RRTC()
+      else:
+        # tree_end has just been extended
+        return self._connect_bw_RRTC()
 
-
-  def _connect_fw(self):
+    elif self.planner_type == 'BiRRT':
+      if (self._query.iteration_count - 1) % 2 == FW or not self._query.enable_bw:
+        # tree_start has just been extended
+        return self._connect_fw_BRRT()
+      else:
+        # tree_end has just been extended
+        return self._connect_bw_BRRT()
+  
+  def _connect_fw_BRRT(self):
     """
     Connect the newly added vertex in C{tree_start} to other vertices on
     C{tree_end}.
 
-    @rtype:  int
+    @rtype: int
     @return: Result of this connecting attempt. Possible values:
-      - B{TRAPPED}: connection successful
-      - B{REACHED}: connection failed
+             - B{TRAPPED}: connect failed
+             - B{REACHED}: connect succeeded
     """
     query = self._query
 
     v_test = query.tree_start.vertices[-1]
-    nnindices = self._nearest_neighbor_indices(v_test.config.SE3_config, BW)
+    nnindices = self._nearest_neighbor_indices(v_test.config.SE3_config, BW, self.planner_type)
     status = TRAPPED
     for index in nnindices:
       v_near = query.tree_end[index]
@@ -1108,20 +1120,20 @@ class CCPlanner(object):
     return status        
 
 
-  def _connect_bw(self):
+  def _connect_bw_BRRT(self):
     """
     Connect the newly added vertex in C{tree_end} to other vertices on
     C{tree_start}.
 
-    @rtype:  int
+    @rtype: int
     @return: Result of this connecting attempt. Possible values:
-             -  B{TRAPPED}: connection successful
-             -  B{REACHED}: connection failed
+             - B{TRAPPED}: connect failed
+             - B{REACHED}: connect succeeded
     """
     query = self._query
 
     v_test = query.tree_end.vertices[-1]
-    nnindices = self._nearest_neighbor_indices(v_test.config.SE3_config, FW)
+    nnindices = self._nearest_neighbor_indices(v_test.config.SE3_config, FW, self.planner_type)
     status = TRAPPED
     for index in nnindices:
       v_near = query.tree_start[index]
@@ -1189,8 +1201,343 @@ class CCPlanner(object):
       status = REACHED
       return status
     return status        
+     
 
-  
+
+  def _connect_fw_RRTC(self):
+    """
+    Connect the newly added vertex in C{tree_start} to other vertices on
+    C{tree_end}.
+
+    @rtype: int
+    @return: Result of this connecting attempt. Possible values:
+             - B{TRAPPED}: connect failed
+             - B{REACHED}: connect succeeded
+    """
+    query = self._query
+
+    v_test = query.tree_start.vertices[-1]
+    nnindices = self._nearest_neighbor_indices(v_test.config.SE3_config, BW, self.planner_type)
+    for index in nnindices:
+      v_near = query.tree_end[index]
+      while True:
+        q_end  = v_near.config.SE3_config.q
+        p_end  = v_near.config.SE3_config.p
+        qd_end = v_near.config.SE3_config.qd
+        pd_end = v_near.config.SE3_config.pd
+        
+        q_beg  = v_test.config.SE3_config.q
+        p_beg  = v_test.config.SE3_config.p
+        qd_beg = v_test.config.SE3_config.qd
+        pd_beg = v_test.config.SE3_config.pd
+
+        # Check distance
+        SE3_dist = utils.SE3_distance(v_test.config.SE3_config.T, 
+                                      v_near.config.SE3_config.T, 
+                                      1.0 / np.pi, 1.0)
+        if SE3_dist <= query.step_size: # connect directly
+          status = REACHED
+
+          # Interpolate the object trajectory
+          R_beg = orpy.rotationMatrixFromQuat(q_beg)
+          R_end = orpy.rotationMatrixFromQuat(q_end)
+          rot_traj = lie.InterpolateSO3(R_beg, R_end, qd_beg, qd_end, 
+                                        query.interpolation_duration)
+          translation_traj_str = utils.traj_str_3rd_degree(
+            p_beg, p_end, pd_beg, pd_end, query.interpolation_duration)
+
+          # Check translational limit
+          # NB: Can skip this step, since it's not likely the traj will 
+          # exceed the limits given that p_beg and p_end are within limits
+          if not utils.check_translation_traj_str_limits(
+            query.upper_limits, query.lower_limits, translation_traj_str):
+            self.logger.logdebug('TRAPPED : SE(3) trajectory exceeds '
+                                 'translational limit')
+            status = TRAPPED
+            break
+
+          translation_traj = TrajectoryFromStr(translation_traj_str)
+
+          # Check collision (object trajectory)
+          if not self.is_collision_free_SE3_traj(
+            rot_traj, translation_traj, R_beg):
+            self.logger.logdebug('TRAPPED : SE(3) trajectory in collision')
+            status = TRAPPED
+            break
+          
+          # Check reachability (object trajectory)
+          passed, bimanual_wpts, timestamps = \
+            self.check_SE3_traj_reachability(
+              lie.LieTraj([R_beg, R_end], [rot_traj]), translation_traj,
+              v_near.config.q_robots, direction=BW)
+          if not passed:
+            self.logger.logdebug('TRAPPED : SE(3) trajectory not reachable')
+            status = TRAPPED
+            break
+
+          # Check similarity of terminal IK solutions
+          eps = 1e-3
+          for i in xrange(2):
+            if not utils.distance(v_test.config.q_robots[i], 
+                                  bimanual_wpts[i][0]) < eps:
+              passed = False
+              break
+          if not passed:
+            self.logger.logdebug('TRAPPED : IK solution discrepancy '
+                                 '(robot {0})'.format(i))
+            status = TRAPPED
+            break
+
+          # Now the connection is successful
+          query.tree_end.vertices.append(v_near)
+          query.connecting_rot_traj         = rot_traj
+          query.connecting_translation_traj = translation_traj
+          query.connecting_bimanual_wpts    = bimanual_wpts
+          query.connecting_timestamps       = timestamps
+
+          return status
+
+        else: # extend towards target
+          status = ADVANCED
+
+          if not utils._is_close_axis(q_beg, q_end):
+            q_beg = -q_beg
+          q_beg = q_end + query.step_size * (q_beg - q_end) / SE3_dist
+          q_beg /= np.sqrt(np.dot(q_beg, q_beg))
+          p_beg = p_end + query.step_size * (p_beg - p_end) / SE3_dist
+          new_SE3_config = SE3Config(q_beg, p_beg, qd_beg, pd_beg)
+
+          # Check new config collision
+          if not self.is_collision_free_SE3_config(new_SE3_config):
+            self.logger.logdebug('TRAPPED : SE(3) config in collision')
+            status = TRAPPED
+            break
+
+          # Check reachability
+          if not self.check_SE3_config_reachability(new_SE3_config):
+            self.logger.logdebug('TRAPPED : SE(3) config not reachable')
+            status = TRAPPED
+            break
+
+          # Interpolate the object trajectory
+          R_beg = orpy.rotationMatrixFromQuat(q_beg)
+          R_end = orpy.rotationMatrixFromQuat(q_end)
+          rot_traj = lie.InterpolateSO3(R_beg, R_end, qd_beg, qd_end, 
+                                        query.interpolation_duration)
+          translation_traj_str = utils.traj_str_3rd_degree(
+            p_beg, p_end, pd_beg, pd_end, query.interpolation_duration)
+
+          # Check translational limit
+          # NB: Can skip this step, since it's not likely the traj will 
+          # exceed the limits given that p_beg and p_end are within limits
+          if not utils.check_translation_traj_str_limits(
+            query.upper_limits, query.lower_limits, translation_traj_str):
+            self.logger.logdebug('TRAPPED : SE(3) trajectory exceeds '
+                                 'translational limit')
+            status = TRAPPED
+            break
+
+          translation_traj = TrajectoryFromStr(translation_traj_str)
+
+          # Check collision (object trajectory)
+          if not self.is_collision_free_SE3_traj(
+            rot_traj, translation_traj, R_beg):
+            self.logger.logdebug('TRAPPED : SE(3) trajectory in collision')
+            status = TRAPPED
+            break
+
+          # Check reachability (object trajectory)
+          passed, bimanual_wpts, timestamps = \
+            self.check_SE3_traj_reachability(
+              lie.LieTraj([R_beg, R_end], [rot_traj]), translation_traj,
+              v_near.config.q_robots, direction=BW)
+          if not passed:
+            self.logger.logdebug('TRAPPED : SE(3) trajectory not reachable')
+            status = TRAPPED
+            break
+
+          # Now this trajectory is alright.
+          self.logger.logdebug('ADVANCED : new vertex generated')
+          new_q_robots = [wpts[0] for wpts in bimanual_wpts] 
+          new_config = CCConfig(new_q_robots, new_SE3_config)
+          v_new = CCVertex(new_config)
+          query.tree_end.add_vertex(v_new, v_near.index, rot_traj, 
+                                    translation_traj, bimanual_wpts, 
+                                    timestamps, invisible=True)
+          v_near = v_new
+
+      if status == TRAPPED:
+        v_near.invisible = False # validate last vertex of this attempt
+
+    return status
+
+  def _connect_bw_RRTC(self):
+    """
+    Connect the newly added vertex in C{tree_end} to other vertices on
+    C{tree_start}.
+
+    @rtype: int
+    @return: Result of this connecting attempt. Possible values:
+             - B{TRAPPED}: connect failed
+             - B{REACHED}: connect succeeded
+    """
+    query = self._query
+
+    v_test = query.tree_end.vertices[-1]
+    nnindices = self._nearest_neighbor_indices(v_test.config.SE3_config, FW, self.planner_type)
+    for index in nnindices:
+      v_near = query.tree_start[index]
+      while True:
+        q_end  = v_test.config.SE3_config.q
+        p_end  = v_test.config.SE3_config.p
+        qd_end = v_test.config.SE3_config.qd
+        pd_end = v_test.config.SE3_config.pd
+        
+        q_beg  = v_near.config.SE3_config.q
+        p_beg  = v_near.config.SE3_config.p
+        qd_beg = v_near.config.SE3_config.qd
+        pd_beg = v_near.config.SE3_config.pd
+
+        # Check distance
+        SE3_dist = utils.SE3_distance(v_near.config.SE3_config.T, 
+                                      v_test.config.SE3_config.T, 
+                                      1.0 / np.pi, 1.0)
+        if SE3_dist <= query.step_size: # connect directly
+          status = REACHED
+
+          # Interpolate the object trajectory
+          R_beg = orpy.rotationMatrixFromQuat(q_beg)
+          R_end = orpy.rotationMatrixFromQuat(q_end)
+          rot_traj = lie.InterpolateSO3(R_beg, R_end, qd_beg, qd_end, 
+                                        query.interpolation_duration)
+          translation_traj_str = utils.traj_str_3rd_degree(
+            p_beg, p_end, pd_beg, pd_end, query.interpolation_duration)
+
+          # Check translational limit
+          # NB: Can skip this step, since it's not likely the traj will 
+          # exceed the limits given that p_beg and p_end are within limits
+          if not utils.check_translation_traj_str_limits(
+            query.upper_limits, query.lower_limits, translation_traj_str):
+            self.logger.logdebug('TRAPPED : SE(3) trajectory exceeds '
+                                 'translational limit')
+            status = TRAPPED
+            break
+
+          translation_traj = TrajectoryFromStr(translation_traj_str)
+
+          # Check collision (object trajectory)
+          if not self.is_collision_free_SE3_traj(
+            rot_traj, translation_traj, R_beg):
+            self.logger.logdebug('TRAPPED : SE(3) trajectory in collision')
+            status = TRAPPED
+            break
+          
+          # Check reachability (object trajectory)
+          passed, bimanual_wpts, timestamps = \
+            self.check_SE3_traj_reachability(
+              lie.LieTraj([R_beg, R_end], [rot_traj]), translation_traj,
+              v_near.config.q_robots)
+          if not passed:
+            self.logger.logdebug('TRAPPED : SE(3) trajectory not reachable')
+            status = TRAPPED
+            break
+
+          # Check similarity of terminal IK solutions
+          eps = 1e-3
+          for i in xrange(2):
+            if not utils.distance(v_test.config.q_robots[i], 
+                      bimanual_wpts[i][-1]) < eps:
+              passed = False
+              break
+          if not passed:
+            self.logger.logdebug('TRAPPED : IK solution discrepancy '
+                                 '(robot {0})'.format(i))
+            status = TRAPPED
+            break
+
+          # Now the connection is successful
+          query.tree_start.vertices.append(v_near)
+          query.connecting_rot_traj         = rot_traj
+          query.connecting_translation_traj = translation_traj
+          query.connecting_bimanual_wpts    = bimanual_wpts
+          query.connecting_timestamps       = timestamps
+
+          return status
+
+        else: # extend towards target
+          status = ADVANCED
+
+          if not utils._is_close_axis(q_beg, q_end):
+            q_end = -q_end
+          q_end = q_beg + query.step_size * (q_end - q_beg) / SE3_dist
+          q_end /= np.sqrt(np.dot(q_end, q_end))
+          p_end = p_beg + query.step_size * (p_end - p_beg) / SE3_dist
+          new_SE3_config = SE3Config(q_end, p_end, qd_end, pd_end)
+
+          # Check new config collision
+          if not self.is_collision_free_SE3_config(new_SE3_config):
+            self.logger.logdebug('TRAPPED : SE(3) config in collision')
+            status = TRAPPED
+            break
+
+          # Check reachability
+          if not self.check_SE3_config_reachability(new_SE3_config):
+            self.logger.logdebug('TRAPPED : SE(3) config not reachable')
+            status = TRAPPED
+            break
+
+          # Interpolate the object trajectory
+          R_beg = orpy.rotationMatrixFromQuat(q_beg)
+          R_end = orpy.rotationMatrixFromQuat(q_end)
+          rot_traj = lie.InterpolateSO3(R_beg, R_end, qd_beg, qd_end, 
+                                        query.interpolation_duration)
+          translation_traj_str = utils.traj_str_3rd_degree(
+            p_beg, p_end, pd_beg, pd_end, query.interpolation_duration)
+
+          # Check translational limit
+          # NB: Can skip this step, since it's not likely the traj will 
+          # exceed the limits given that p_beg and p_end are within limits
+          if not utils.check_translation_traj_str_limits(
+            query.upper_limits, query.lower_limits, translation_traj_str):
+            self.logger.logdebug('TRAPPED : SE(3) trajectory exceeds '
+                                 'translational limit')
+            status = TRAPPED
+            break
+
+          translation_traj = TrajectoryFromStr(translation_traj_str)
+
+          # Check collision (object trajectory)
+          if not self.is_collision_free_SE3_traj(
+            rot_traj, translation_traj, R_beg):
+            self.logger.logdebug('TRAPPED : SE(3) trajectory in collision')
+            status = TRAPPED
+            break
+          
+          # Check reachability (object trajectory)
+          passed, bimanual_wpts, timestamps = \
+            self.check_SE3_traj_reachability(
+              lie.LieTraj([R_beg, R_end], [rot_traj]), translation_traj,
+              v_near.config.q_robots)
+          if not passed:
+            self.logger.logdebug('TRAPPED : SE(3) trajectory not reachable')
+            status = TRAPPED
+            break
+
+          # Now this trajectory is alright.
+          self.logger.logdebug('ADVANCED : new vertex generated')
+          new_q_robots = [wpts[-1] for wpts in bimanual_wpts] 
+          new_config = CCConfig(new_q_robots, new_SE3_config)
+          v_new = CCVertex(new_config)
+          query.tree_start.add_vertex(v_new, v_near.index, rot_traj,
+                                      translation_traj, bimanual_wpts,
+                                      timestamps, invisible=True)
+          v_near = v_new
+
+      if status == TRAPPED:
+        v_near.invisible = False # validate last vertex of this attempt
+
+    return status
+
   def is_collision_free_SE3_config(self, SE3_config):
     """
     Check whether the given C{SE3_config} is collision-free.
@@ -1199,14 +1546,13 @@ class CCPlanner(object):
     @type  SE3_config: SE3Config
     @param SE3_config: SE3 configuration to be checked.
 
-    @rtype:  bool
+    @rtype: bool
     @return: B{True} if the config is collision-free.
     """
     self._enable_robots_collision(False)
     self.obj.SetTransform(SE3_config.T)
     is_free = not self.env.CheckCollision(self.obj)
     self._enable_robots_collision()
-
     return is_free
   
   def is_collision_free_SE3_traj(self, rot_traj, translation_traj, R_beg):
@@ -1221,7 +1567,7 @@ class CCPlanner(object):
     @type  R_beg: numpy.ndarray
     @param R_beg: Rotation matrix of the manipulated object's initial pose.
 
-    @rtype:  bool
+    @rtype: bool
     @return: B{True} if the trajectory is collision-free.
     """
     T = np.eye(4)
@@ -1251,7 +1597,7 @@ class CCPlanner(object):
     @type  SE3_config: SE3Config
     @param SE3_config: SE3 configuration to be checked.
 
-    @rtype:  bool
+    @rtype: bool
     @return: B{True} if the IK solutions for both robots exist.
     """
     with self.env:
@@ -1278,26 +1624,22 @@ class CCPlanner(object):
     @type  lie_traj: lie.LieTraj
     @param rot_traj: Lie trajecoty of the manipulated object.
     @type  translation_traj: TOPP.Trajectory.PiecewisePolynomialTrajectory
-    @param translation_traj: Trajecoty of the manipulated object's 
-                             translational motion.
+    @param translation_traj: Trajecoty of the manipulated object's translational motion.
     @type  ref_sols: list
-    @param ref_sols: list of both robots' initial configuration.
-                             This is used as a starting point for object tracking.
+    @param ref_sols: list of both robots' initial configuration. This is used as a starting point for object tracking.
     @type  direction: int
-    @param direction: Direction of this tracking. This is to be BW 
-                             when this function is called in C{_extend_bw}
-                             or C{_connect_bw}.
+    @param direction: Direction of this tracking. This is to be BW when this function is called in C{_extend_bw} or C{_connect_bw}.
 
-    @rtype:  bool, list, list
-    @return: -  status: B{True} if the trajectory for both robots exist.
-             -  bimanual_wpts: Trajectory of bimanual robots in form of waypoints list.
-             -  timestamps: Timestamps for time parameterization of C{bimanual_wpts}.
+    @rtype: bool, list, list
+    @return: - status: B{True} if the trajectory for both robots exist.
+             - bimanual_wpts: Trajectory of bimanual robots in form of waypoints list.
+             - timestamps: Timestamps for time parameterization of C{bimanual_wpts}.
     """
     return self.bimanual_obj_tracker.plan(lie_traj, translation_traj,
             self.bimanual_T_rel, ref_sols, self._query.discr_timestep,
             self._query.discr_check_timestep, direction)
 
-  def _nearest_neighbor_indices(self, SE3_config, treetype):
+  def _nearest_neighbor_indices(self, SE3_config, treetype, planner_type):
     """
     Return indices of C{self.nn} vertices nearest to the given C{SE3_config}
     in the tree specified by C{treetype}.
@@ -1306,16 +1648,24 @@ class CCPlanner(object):
     @param SE3_config: SE3 configuration to be used.
     @type  treetype: int
     @param treetype: Type of the C{CCTree} being examined.
+    @type  planner_type: str
+    @param planner_type: Data structure used for planning.
 
-    @rtype:  list
+    @rtype: list
     @return: list of indices of nearest vertices, ordered by ascending distance
     """
     if (treetype == FW):
       tree = self._query.tree_start
     else:
       tree = self._query.tree_end
-    nv = len(tree)
-      
+    nv = 0
+    if planner_type == 'RRTConnect':
+      for v in tree.vertices:
+        if not v.invisible:
+          nv += 1
+    elif planner_type == 'BiRRT':
+      nv = len(tree)
+
     distance_list = [utils.SE3_distance(SE3_config.T, v.config.SE3_config.T, 
                       1.0 / np.pi, 1.0) for v in tree.vertices]
     distance_heap = heap.Heap(distance_list)
@@ -1325,7 +1675,18 @@ class CCPlanner(object):
       nn = nv
     else:
       nn = min(self._query.nn, nv)
-    nnindices = [distance_heap.ExtractMin()[0] for i in range(nn)]
+
+    if planner_type == 'RRTConnect':
+      i = 0
+      nnindices = []
+      while i < nn:
+        vertex_index = distance_heap.ExtractMin()[0]
+        if not tree[vertex_index].invisible:
+          i += 1
+          nnindices.append(vertex_index)
+    elif planner_type == 'BiRRT':
+      nnindices = [distance_heap.ExtractMin()[0] for i in range(nn)]
+
     return nnindices
 
   @staticmethod
@@ -1380,8 +1741,9 @@ class CCPlanner(object):
 
   def shortcut(self, query, maxiter=20):
     """
-    Shortcut the closed-chain trajectory in the given query (C{query.cctraj}). This
-    method replaces the original trajectory with the new one.
+    Shortcut the closed-chain trajectory in the given query 
+    (C{query.cctraj}). This method replaces the original trajectory with the 
+    new one.
 
     @type  query: CCQuery
     @param query: The query in which the closed-chain trajectory is to be shortcutted.
@@ -1500,7 +1862,7 @@ class CCPlanner(object):
     Enable or disable collision checking for the robots.
 
     @type  enable: boll
-    @param query: B{True} to enable collision checking for the robots. B{False} to disable.
+    @param enable: B{True} to enable collision checking for the robots. B{False} to disable.
     """
     for robot in self.robots:
       robot.Enable(enable)
@@ -1525,8 +1887,8 @@ class BimanualObjectTracker(object):
     @param robots: List of robots for the closed-chain motion.
     @type  obj: openravepy.KinBody
     @param obj: Object to be manipulated in the closed-chain motion. It connects the end-effectors of the two robots.
-    @type  debug: bool
-    @param debug: B{True} if debug info is to be displayed.
+    @type  logger: logger type
+    @param logger: Desired logger for logging.
     """
     self.robots = robots
     self.manips = [robot.GetActiveManipulator() for robot in robots]
@@ -1574,10 +1936,10 @@ class BimanualObjectTracker(object):
     @type  direction: int
     @param direction: Direction of this planning. This is to be BW when this function is called in C{_extend_bw} or C{_connect_bw}.
 
-    @rtype:  bool, list, list
-    @return: -  result: B{True} if the trajectory for both robots exist.
-             -  bimanual_wpts: Trajectory of bimanual robots in form of waypoints list.
-             -  timestamps: Timestamps for time parameterization of C{bimanual_wpts}.
+    @rtype: bool, list, list
+    @return: - result: B{True} if the trajectory for both robots exist.
+             - bimanual_wpts: Trajectory of bimanual robots in form of waypoints list.
+             - timestamps: Timestamps for time parameterization of C{bimanual_wpts}.
     """
     if direction == FW:
       duration = lie_traj.duration
@@ -1693,7 +2055,7 @@ class BimanualObjectTracker(object):
     @type  T_obj: numpy.ndarray
     @param T_obj: Transformation matrix of the object.
 
-    @rtype:  bool
+    @rtype: bool
     @return: B{True} if the configuration is feasible.
     """
 
@@ -1728,7 +2090,7 @@ class BimanualObjectTracker(object):
     @type  q: list
     @param q: Initial configuration of the robot.
 
-    @rtype:  numpy.ndarray
+    @rtype: numpy.ndarray
     @return: IK solution computed. B{None} if no solution exist.
     """
     R = T[0:3, 0:3]
@@ -1766,7 +2128,7 @@ class BimanualObjectTracker(object):
     @type  q: list
     @param q: Current configuration of the robot.
 
-    @rtype:  numpy.ndarray
+    @rtype: numpy.ndarray
     @return: Difference between the robot's target pose and current pose.
     """
     with self.robots[robot_index]:
@@ -1791,7 +2153,7 @@ class BimanualObjectTracker(object):
     @type  q: list
     @param q: Current configuration of the robot.
 
-    @rtype:  numpy.ndarray
+    @rtype: numpy.ndarray
     @return: Dealta_q the robot needs to move to reach the target pose.
     """
     with self.robots[robot_index]:

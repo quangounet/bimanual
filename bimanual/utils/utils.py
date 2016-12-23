@@ -23,8 +23,8 @@ def poly_critical_points(p, interval=None):
   """
   Return the critical points of the given polynomial.
 
-  @type         p: numpy.poly1d
-  @param        p: Polynomial to be analyzed.
+  @type  p: numpy.poly1d
+  @param p: Polynomial to be analyzed.
   @type  interval: list
   @param interval: Interested time interval of the polynomial.
 
@@ -52,18 +52,18 @@ def traj_str_3rd_degree(q_beg, q_end, qd_beg, qd_end, duration):
   It is up to 10 decimal places accuracy to guarantee continuity 
   at trajectory end.
 
-  @type     q_beg: list
-  @param    q_beg: Initial configuration.
-  @type     q_end: list
-  @param    q_end: Final configuration.
-  @type    qd_beg: list
-  @param   qd_beg: Time derivative of initial configuration.
-  @type    qd_end: list
-  @param   qd_end: Time derivative of final configuration.
+  @type  q_beg: list
+  @param q_beg: Initial configuration.
+  @type  q_end: list
+  @param q_end: Final configuration.
+  @type  qd_beg: list
+  @param qd_beg: Time derivative of initial configuration.
+  @type  qd_end: list
+  @param qd_end: Time derivative of final configuration.
   @type  duration: float
   @param duration: Time length of the interpolated trajectory.
 
-  @rtype:  str
+  @rtype: str
   @return: The interpolated polynomial trajectory string.
   """
   traj_str = ''
@@ -82,22 +82,22 @@ def traj_str_5th_degree(q_beg, q_end, qd_beg, qd_end,
   It is up to 10 decimal places accuracy to guarantee continuity 
   at trajectory end.
 
-  @type     q_beg: list
-  @param    q_beg: Initial configuration.
-  @type     q_end: list
-  @param    q_end: Final configuration.
-  @type    qd_beg: list
-  @param   qd_beg: Time derivative of initial configuration.
-  @type    qd_end: list
-  @param   qd_end: Time derivative of final configuration.
-  @type   qdd_beg: list
-  @param  qdd_beg: 2nd order time derivative of initial configuration.
-  @type   qdd_end: list
-  @param  qdd_end: 2nd order time derivative of final configuration.
+  @type  q_beg: list
+  @param q_beg: Initial configuration.
+  @type  q_end: list
+  @param q_end: Final configuration.
+  @type  qd_beg: list
+  @param qd_beg: Time derivative of initial configuration.
+  @type  qd_end: list
+  @param qd_end: Time derivative of final configuration.
+  @type  qdd_beg: list
+  @param qdd_beg: 2nd order time derivative of initial configuration.
+  @type  qdd_end: list
+  @param qdd_end: 2nd order time derivative of final configuration.
   @type  duration: float
   @param duration: Time length of the interpolated trajectory.
 
-  @rtype:  str
+  @rtype: str
   @return: The interpolated polynomial trajectory string.
   """
   traj_str = ''
@@ -116,10 +116,10 @@ def check_config_DOF_limits(robot, q):
 
   @type  robot: openravepy.Robot
   @param robot: Robot to be checked.
-  @type      q: list
-  @param     q: Configuration of the robot to be checked
+  @type  q: list
+  @param q: Configuration of the robot to be checked
 
-  @rtype:  bool
+  @rtype: bool
   @return: B{True} if the configuration is within limits.
   """
   lower_limits, upper_limits = robot.GetDOFLimits()
@@ -133,12 +133,12 @@ def check_traj_str_DOF_limits(robot, traj_str):
   """
   Check whether the trajectory is within the robot's DOF limits. 
 
-  @type     robot: openravepy.Robot
-  @param    robot: Robot to be checked.
+  @type  robot: openravepy.Robot
+  @param robot: Robot to be checked.
   @type  traj_str: str
   @param traj_str: String representing the trajectory to be checked.
 
-  @rtype:  bool
+  @rtype: bool
   @return: B{True} if the trajectory is within limits.
   """
   traj_info = string.split(traj_str, "\n")
@@ -175,10 +175,10 @@ def check_translation_traj_str_limits(upper_limits, lower_limits, traj_str):
   @param upper_limits: Upper limits.
   @type  lower_limits: list
   @param lower_limits: Lower limits.
-  @type      traj_str: str
-  @param     traj_str: String representing the trajectory to be checked.
+  @type  traj_str: str
+  @param traj_str: String representing the trajectory to be checked.
 
-  @rtype:  bool
+  @rtype: bool
   @return: B{True} if the trajectory is within limits.
   """
   traj_info = string.split(traj_str, "\n")
@@ -206,7 +206,7 @@ def traj_str_from_traj_list(traj_list):
   @type  traj_list: list of TOPP.Trajectory.PiecewisePolynomialTrajectory
   @param traj_list: A list containing all trajectories.
 
-  @rtype:  str
+  @rtype: str
   @return: Trajectory string generated.
   """
   traj_str_list = [str(traj) for traj in traj_list]      
@@ -225,14 +225,14 @@ def replace_traj_segment(original_traj, traj_segment, t0, t1):
 
   @type  original_traj: TOPP.Trajectory.PiecewisePolynomialTrajectory
   @param original_traj: Original trajectory.
-  @type   traj_segment: TOPP.Trajectory.PiecewisePolynomialTrajectory
-  @param  traj_segment: New trajectory segment.
-  @type             t0: float
-  @param            t0: Start time of the time interval.
-  @type             t1: float
-  @param            t1: End time of the time interval.
+  @type  traj_segment: TOPP.Trajectory.PiecewisePolynomialTrajectory
+  @param traj_segment: New trajectory segment.
+  @type  t0: float
+  @param t0: Start time of the time interval.
+  @type  t1: float
+  @param t1: End time of the time interval.
 
-  @rtype:  str
+  @rtype: str
   @return: New trajectory after replacement.
   """
   assert(t1 > t0)
@@ -290,14 +290,14 @@ def replace_lie_traj_segment(original_lie_traj, lie_traj_segment, t0, t1):
 
   @type  original_traj: lie.LieTraj
   @param original_traj: Original lie trajectory.
-  @type   traj_segment: lie.LieTraj
-  @param  traj_segment: New lie trajectory segment.
-  @type             t0: float
-  @param            t0: Start time of the time interval.
-  @type             t1: float
-  @param            t1: End time of the time interval.
+  @type  traj_segment: lie.LieTraj
+  @param traj_segment: New lie trajectory segment.
+  @type  t0: float
+  @param t0: Start time of the time interval.
+  @type  t1: float
+  @param t1: End time of the time interval.
 
-  @rtype:  str
+  @rtype: str
   @return: New lie trajectory after replacement.
   """
   assert(t1 > t0)
@@ -392,7 +392,7 @@ def SO3_distance(R0, R1):
   @type  R1: numpy.ndarray
   @param R1: Rotation matrix.
 
-  @rtype:  float
+  @rtype: float
   @return: Distance.
   """
   dR = lie.logvect(dot(R0.T, R1))
@@ -407,7 +407,7 @@ def R3_distance(p0, p1):
   @type  p1: numpy.ndarray
   @param p1: Translational 3-vector.
 
-  @rtype:  float
+  @rtype: float
   @return: Distance.
   """
   dp = p0-p1
@@ -422,7 +422,7 @@ def SE3_distance(T0, T1, c=None, d=None):
   @type  T1: numpy.ndarray
   @param T1: 4x4 transformation matrix.
 
-  @rtype:  float
+  @rtype: float
   @return: Distance.
   """
   R0 = T0[:3, :3]
@@ -446,13 +446,14 @@ def distance(q1, q2, metrictype=1):
   @param q1: Robot joint configuration.
   @type  q2: numpy.ndarray
   @param q2: Robot joint configuration.
-  @type metrictype: int
-  @param metrictype: Metric type used for computing distance. Possible values:
-                     -  1 : L2 norm squared
-                     -  2 : L2 norm
-                     -  3 : L1 norm
+  @type  metrictype: int
+  @param metrictype: Metric type used for computing distance. 
+                     Possible values:
+                     - 1 : L2 norm squared
+                     - 2 : L2 norm
+                     - 3 : L1 norm
 
-  @rtype:  float
+  @rtype: float
   @return: Distance.
   """
   delta_q = q1 - q2
@@ -470,19 +471,19 @@ def generate_accumulated_dist_list(traj, metrictype=1, discr_timestep=0.005):
   Return a list of accumulated robot config distances at each timestamp of 
   the given trajectory.
 
-  @type            traj: TOPP.Trajectory.PiecewisePolynomialTrajectory
-  @param           traj: Trajectory to be discretized.
-  @type      metrictype: int
-  @param     metrictype: Metric type used for computing distance. 
-                         Possible values:
-                         -  0 : L2 norm squared
-                         -  1 : L2 norm
-                         -  2 : L1 norm
+  @type  traj: TOPP.Trajectory.PiecewisePolynomialTrajectory
+  @param traj: Trajectory to be discretized.
+  @type  metrictype: int
+  @param metrictype: Metric type used for computing distance. 
+                     Possible values:
+                     - 0 : L2 norm squared
+                     - 1 : L2 norm
+                     - 2 : L1 norm
   @type  discr_timestep: float
   @param discr_timestep: Time resolution for generating accumulated 
                          distance list.
 
-  @rtype:  list
+  @rtype: list
   @return: A list of accumulated distance at each timestamp.
   """
   delta_dist_list = [0.0]
@@ -506,18 +507,18 @@ def compute_accumulated_SE3_distance(lie_traj, translation_traj, t0=None, t1=Non
   C{generate_accumulated_SE3_dist_list()}
   when comparing accumulated distance between trajectories.
 
-  @type          lie_traj: lie.LieTraj
-  @param         lie_traj: Lie trajectory to be discretized.
+  @type  lie_traj: lie.LieTraj
+  @param lie_traj: Lie trajectory to be discretized.
   @type  translation_traj: TOPP.Trajectory.PiecewisePolynomialTrajectory
   @param translation_traj: Translational trajectory to be discretized.
-  @type                t0: float
-  @param               t0: Start time for computing accumulated distance.
-  @type                t1: float
-  @param               t1: End time for computing accumulated distance.
-  @type    discr_timestep: float
-  @param   discr_timestep: Time resolution for computing accumulated distance.
+  @type  t0: float
+  @param t0: Start time for computing accumulated distance.
+  @type  t1: float
+  @param t1: End time for computing accumulated distance.
+  @type  discr_timestep: float
+  @param discr_timestep: Time resolution for computing accumulated distance.
 
-  @rtype:  float
+  @rtype: float
   @return: Accumulated diatance.
   """
   
@@ -556,21 +557,16 @@ def generate_accumulated_SE3_dist_list(lie_traj, translation_traj,
   given trajectory.
   The trajectory is to be sliced into M{n} segments.
 
-  @type                lie_traj: lie.LieTraj
-  @param               lie_traj: Lie trajectory to be discretized.
-  @type        translation_traj: TOPP.Trajectory.PiecewisePolynomialTrajectory
-  @param       translation_traj: Translational trajectory to be discretized.
-  @type          discr_timestep: float
-  @param         discr_timestep: Time resolution for generating accumulated
-                                 distance list.
+  @type  lie_traj: lie.LieTraj
+  @param lie_traj: Lie trajectory to be discretized.
+  @type  translation_traj: TOPP.Trajectory.PiecewisePolynomialTrajectory
+  @param translation_traj: Translational trajectory to be discretized.
+  @type  discr_timestep: float
+  @param discr_timestep: Time resolution for generating accumulated distance list.
   @type  discr_compute_timestep: float
-  @param discr_compute_timestep: Real time resolition used to compute 
-                                 distance; each contains a cycle of 
-                                 discr_timestep. All timesteps within one 
-                                 cycle will share the same accumulated 
-                                 distance value to ensure speed.
+  @param discr_compute_timestep: Real time resolition used to compute distance; each contains a cycle of discr_timestep. All timesteps within one cycle will share the same accumulated distance value to ensure speed.
 
-  @rtype:  list, length = M{n+1}
+  @rtype: list, length = M{n+1}
   @return: A list of accumulated distance at each timestamp.
   """
   delta_dist_list = []
@@ -606,12 +602,12 @@ def _is_close_axis(axis, target_axis):
   Check wether the two given axis (extracted from their respective 
   quaternion) belong to the same class.
 
-  @type         axis: list
-  @param        axis: Axis vector.
+  @type  axis: list
+  @param axis: Axis vector.
   @type  target_axis: list
   @param target_axis: Axis vector.
 
-  @rtype:  bool
+  @rtype: bool
   @return: B{True} is they are in the same class.
   """
   axis_neg = axis * -1.
@@ -629,7 +625,7 @@ def merge_timestamps_list(timestamps_list):
   @param timestamps_list: list containing all lists of timestamps to 
   be merged.
 
-  @rtype:  list
+  @rtype: list
   @return: A list of merged timstamps.
   """
 
@@ -654,7 +650,7 @@ def merge_wpts_list(wpts_list, eps=1e-3):
   @type  wpts_list: list
   @param wpts_list: list containing all lists of waypoints to be merged.
 
-  @rtype:  list
+  @rtype: list
   @return: A list of merged waypoints.
   """
   new_wpts = []
@@ -700,14 +696,14 @@ def discretize_wpts(q_init, q_final, step_count):
   Return a list of waypoints interpolated start and end waypoints
   (configurations), discretized according to C{step_count}.
 
-  @type      q_init: numpy.ndarray
-  @param     q_init: Start configuration.
-  @type     q_final: numpy.ndarray
-  @param    q_final: End configuration.
+  @type  q_init: numpy.ndarray
+  @param q_init: Start configuration.
+  @type  q_final: numpy.ndarray
+  @param q_final: End configuration.
   @type  step_count: int
   @param step_count: Total number of waypoints to generate excluding q_init.
 
-  @rtype:  list
+  @rtype: list
   @return: A list of interpolated waypoints. This includes C{q_final}
            but not C{q_init}, with a length of C{step_count}.
   """
@@ -767,10 +763,10 @@ def compute_endeffector_transform(manip, q):
 
   @type  manip: openravepy.Manipulator
   @param manip: Manipulator to be used.
-  @type      q: numpy.ndarray
-  @param     q: Configuration of the manipulator.
+  @type  q: numpy.ndarray
+  @param q: Configuration of the manipulator.
 
-  @rtype:  numpy.ndarray
+  @rtype: numpy.ndarray
   @return: A 4x4 transformation matrix of the manipulator's end-effector.
   """
   robot = manip.GetRobot()
@@ -899,6 +895,17 @@ def scale_DOF_limits(robot, v=1, a=1):
 ########################### Visualization ###########################
 def visualize_config_transition(robot, q_start, q_goal, step_num=50, 
                                 timestep=0.05):
+  """
+  Visualize interpolated transition motion between the given configurations. 
+  This is used as a intuitive check to see whether a closed chain motion query has possible solutions.
+
+  @type  robot: openravepy.Robot
+  @param robot: Robot to be configured.
+  @type  v: float
+  @param v: Velocity scale.
+  @type  a: float
+  @param a: Acceleration scale.
+  """
   q_start = np.array(q_start)
   q_goal = np.array(q_goal)
   delta = (q_goal - q_start)/step_num

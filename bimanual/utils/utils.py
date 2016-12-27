@@ -883,14 +883,20 @@ def scale_DOF_limits(robot, v=1, a=1):
   @type  a: float
   @param a: Acceleration scale.
   """
-  original_velocity_limits = np.array(
-    [3.926990816987241,   2.617993877991494,   2.858325715991114,
-     3.926990816987241,   3.021688533977783,   6.283185307179586,  10. ])
-  original_acceleration_limits = np.array(
-    [19.733565187673889,  16.84469620977287 ,  20.70885517368832 ,
-     20.966465771282682,  23.72286425895733 ,  33.510321638291117,  50.])
+  original_velocity_limits = get_denso_limits()[0]
+  original_acceleration_limits = get_denso_limits()[1]
   robot.SetDOFVelocityLimits(original_velocity_limits * v)
   robot.SetDOFAccelerationLimits(original_acceleration_limits * a)
+
+def get_denso_limits():
+  """
+  Return original velocity and acceleration limits of Denso VS060.
+  """
+  return np.array(
+    [[3.926990816987241,   2.617993877991494,   2.858325715991114,
+      3.926990816987241,   3.021688533977783,   6.283185307179586,  10. ],
+     [19.733565187673889,  16.84469620977287 ,  20.70885517368832 ,
+      20.966465771282682,  23.72286425895733 ,  33.510321638291117,  50.]])
 
 ########################### Visualization ###########################
 def visualize_config_transition(robot, q_start, q_goal, step_num=50, 

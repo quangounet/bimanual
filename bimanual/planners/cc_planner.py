@@ -6,6 +6,7 @@ import openravepy as orpy
 import numpy as np
 import random
 from time import time, sleep
+from copy import deepcopy
 import TOPP
 import cPickle as pickle
 from bimanual.utils.loggers import TextColors
@@ -104,6 +105,21 @@ class CCTrajectory(object):
     self.bimanual_wpts    = bimanual_wpts
     self.timestamps       = timestamps[:]
     self.timestep         = timestep
+
+  @staticmethod
+  def reverse(traj):
+    """
+    Reverse the given CCTrajectory.
+    """
+    lie_traj = deepcopy(traj.lie_traj)
+    lie_traj.reverse()
+    translation_traj = utils.reverse_traj(traj.translation_traj)
+    bimanual_wpts = [traj.bimanual_wpts[0][::-1], traj.bimanual_wpts[1][::-1]]
+    timestamps = traj.timestamps[-1] - np.array(traj.timestamps)
+    timestamps = timestamps.tolist()[::-1]
+    timestep = traj.timestep
+    return CCTrajectory(lie_traj, translation_traj, bimanual_wpts, 
+                        timestamps, timestep)
 
   @staticmethod
   def serialize(traj):
@@ -1689,28 +1705,6 @@ class CCPlanner(object):
 
     return nnindices
 
-  @staticmethod
-  def visualize_lie_traj(obj, lie_traj, translation_traj, speed=1.0):
-    """
-    Visualize the given closed-chain trajectory by animating it in 
-    openrave viewer.
-
-    @type  cctraj: CCTraj
-    @param cctraj: Closed-chain trajectory to be visualized.
-    @type  speed: float
-    @param speed: Speed of the visualization.
-    """
-    sampling_step = 0.01
-    refresh_step  = sampling_step / speed
-
-    T_obj = np.eye(4)
-    for t in np.append(utils.arange(0, lie_traj.duration, sampling_step), 
-                       lie_traj.duration):
-      T_obj[0:3, 0:3] = lie_traj.EvalRotation(t)
-      T_obj[0:3, 3] = translation_traj.Eval(t)
-      obj.SetTransform(T_obj)
-      sleep(refresh_step)
-
   def visualize_cctraj(self, cctraj, speed=1.0):
     """
     Visualize the given closed-chain trajectory by animating it in 
@@ -1750,6 +1744,10 @@ class CCPlanner(object):
     @type  maxiter: int
     @param maxiter: Number of iterations to take.
     """
+    if query.cctraj.lie_traj.reversed:
+      self.logger.logerr('Query contains reversed trajectory. Not eligible for shortcutting.')
+      return False
+      
     # Shortcutting parameters
     min_shortcut_duration = query.interpolation_duration / 2.0
     min_n_timesteps = int(min_shortcut_duration / query.discr_timestep)

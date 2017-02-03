@@ -26,21 +26,31 @@ class LieTraj():
         for t in trajlist:
             self.trajcumulateddurationslist.append(self.duration)
             self.duration += t.duration
+        self.reversed = False
+
+    def reverse(self):
+        self.reversed = not self.reversed
 
     def FindTrajIndex(self, s):
-        if s == 0:
+        if s <= 0:
             s = 1e-10
+        elif s >= self.duration:
+            s = self.duration
         i = bisect.bisect_left(self.trajcumulateddurationslist, s) - 1
         remainder = s - self.trajcumulateddurationslist[i]
         return i, remainder
 
     # Rotation
     def EvalRotation(self,s):
+        if self.reversed:
+            s = self.duration - s
         i, remainder = self.FindTrajIndex(s)
         return(dot(self.Rlist[i],expmat(self.trajlist[i].Eval(remainder))))
 
     # Velocity in body frame
     def EvalOmega(self,s):
+        if self.reversed:
+            s = self.duration - s
         i, remainder = self.FindTrajIndex(s)
         r = self.trajlist[i].Eval(remainder)
         rd = self.trajlist[i].Evald(remainder)
@@ -48,6 +58,8 @@ class LieTraj():
 
     # Acceleration in body frame
     def EvalAlpha(self,s):
+        if self.reversed:
+            s = self.duration - s
         i, remainder = self.FindTrajIndex(s)
         r = self.trajlist[i].Eval(remainder)
         rd = self.trajlist[i].Evald(remainder)
@@ -56,6 +68,8 @@ class LieTraj():
 
     # Torques
     def EvalTorques(self,s,I):
+        if self.reversed:
+            s = self.duration - s
         i, remainder = self.FindTrajIndex(s)
         r = self.trajlist[i].Eval(remainder)
         rd = self.trajlist[i].Evald(remainder)

@@ -3,7 +3,7 @@
         <geom type="box">
             <extents>0.18 0.02 0.017</extents>
             <diffusecolor>1 1 1</diffusecolor>
-            <transparency>0.9</transparency>
+            <!-- <transparency>0.9</transparency> -->
         </geom>
         <mass type="mimicgeom">
           <density>700</density>
@@ -13,7 +13,7 @@
         <geom type="box">
             <extents>0.02 0.12 0.017</extents>
             <diffusecolor>1 1 1</diffusecolor>
-            <transparency>0.9</transparency>
+            <!-- <transparency>0.9</transparency> -->
         </geom>
         <translation>-0.16 0.10 0</translation>
         <mass type="mimicgeom">

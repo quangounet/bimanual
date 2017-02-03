@@ -1,0 +1,93 @@
+<kinbody name="ikea_right_frame">
+
+  <body name="back1" type="dynamic">
+    <geom type="box">
+      <extents>0.015 0.02 0.1825</extents>
+      <diffusecolor>0.847 0.686 0.439</diffusecolor>
+      <ambientcolor>0.6 0.6 0.6</ambientcolor>
+    </geom>
+    <!-- x-rotation = 6 deg. -->
+    <quat>0.99862953 -0.05233596 0.0 0.0</quat>
+    <mass type="mimicgeom">
+      <density>700</density>
+    </mass>
+  </body>
+
+  <body name="back2" type="dynamic">
+    <geom type="box">
+      <extents>0.015 0.02 0.039</extents>
+      <diffusecolor>0.847 0.686 0.439</diffusecolor>
+      <ambientcolor>0.6 0.6 0.6</ambientcolor>
+    </geom>
+    <translation>0.0 0.01830375 0.2180696</translation>
+    <quat>0.99996192 0.00872654 0.0 0.0</quat>
+    <mass type="mimicgeom">
+      <density>700</density>
+    </mass>
+  </body>
+
+  <body name="back3" type="dynamic">
+    <geom type="box">
+      <extents>0.015 0.02 0.2325</extents>
+      <diffusecolor>0.847 0.686 0.439</diffusecolor>
+      <ambientcolor>0.6 0.6 0.6</ambientcolor>
+    </geom>
+    <translation>0.0 -1.84838455e-02 4.83881891e-01</translation>
+    <!-- x-rotation = 8 deg. -->
+    <quat>0.99691733 0.0784591 0.0 0.0</quat>
+    <mass type="mimicgeom">
+      <density>700</density>
+    </mass>
+  </body>
+
+  <body name="front" type="dynamic">
+    <geom type="box">
+      <extents>0.015 0.015 0.2175</extents>
+      <diffusecolor>0.847 0.686 0.439</diffusecolor>
+      <ambientcolor>0.6 0.6 0.6</ambientcolor>
+    </geom>
+    <translation>0.039 0.396 0.03370</translation>
+    <mass type="mimicgeom">
+      <density>700</density>
+    </mass>
+  </body>
+
+  <body name="link_upper" type="dynamic">
+    <geom type="box">
+      <extents>0.01 0.19 0.025</extents>
+      <diffusecolor>0.847 0.686 0.439</diffusecolor>
+      <ambientcolor>0.6 0.6 0.6</ambientcolor>
+    </geom>
+    <translation>0.019 0.2 0.216</translation>
+    <!-- z-rotation = -6 deg. -->
+    <quat>0.99862953 0.0 0.0 -0.05233596</quat>
+    <!-- x-rotation = 1.76561678 deg. -->
+    <!-- <quat>0.9998813 0.01540727 0.0 0.0</quat> -->
+    <!-- x-rotation = 2 deg. -->
+    <!-- <quat>0.9998477 0.01745241 0.0 0.0</quat> -->
+    <!-- x-rotation = 4.7 deg. -->
+    <!-- <quat>0.99915899 0.04100374 0.0 0.0</quat> -->
+    <!-- x-rotation = 4 deg. -->
+    <!-- <quat>0.99939083 0.0348995 0.0 0.0</quat> -->
+    <!-- x-rotation = 3 deg. -->
+    <quat>0.99965732 0.02617695 0.0 0.0</quat>
+    <mass type="mimicgeom">
+      <density>700</density>
+    </mass>
+  </body>
+
+  <body name="link_lower" type="dynamic">
+    <geom type="box">
+      <extents>0.01 0.19 0.015</extents>
+      <diffusecolor>0.847 0.686 0.439</diffusecolor>
+      <ambientcolor>0.6 0.6 0.6</ambientcolor>
+    </geom>
+    <translation>0.019 0.2 -0.05695</translation>
+    <!-- z-rotation = -6 deg. -->
+    <quat>0.99862953 0.0 0.0 -0.05233596</quat>
+    <mass type="mimicgeom">
+      <density>700</density>
+    </mass>
+  </body>
+  
+</kinbody>

@@ -1,7 +1,12 @@
-"""
-Closed-chain motion planner.
-This one plans object trajectory in SE(3) first.
-Sampling of object configuration (in SE(3)) is done based on the object's COM.
+"""Closed-chain motion planner.
+
+This is an RRT-based planner adapted for planner transfer motions for bimanual
+manipulation. In each RRT extension step, a trajectory in SE(3) for the movable object is
+planned first. Then robot configuration waypoints are computed accordingly to 'track' the
+object movement.
+
+The object reference point should be the COM instead of the origin of the local frame.
+
 """
 
 import openravepy as orpy

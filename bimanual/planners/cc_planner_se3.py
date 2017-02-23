@@ -521,7 +521,7 @@ class CCQuery(object):
     self.generate_final_timestamps()
     self.generate_final_bimanual_wpts()
     
-    self.cctraj = CCTrajectory(self.lie_traj, self.translation_traj, self.bimanual_wpts, self.timestamps, self.discr_timestep)
+    self.cctraj = CCTrajectory.init_with_lie_trans_trajs(self.lie_traj, self.translation_traj, self.bimanual_wpts, self.timestamps, self.discr_timestep)
 
 
 class CCPlanner(object):
@@ -1681,19 +1681,15 @@ class CCPlanner(object):
     @param speed: Speed of the visualization.
     """
     timestamps = cctraj.timestamps
-    lie_traj   = cctraj.lie_traj
-    translation_traj = cctraj.translation_traj
+    se3_traj   = cctraj.se3_traj
     left_wpts  = cctraj.bimanual_wpts[0]
     right_wpts = cctraj.bimanual_wpts[1]
 
     sampling_step = cctraj.timestep
     refresh_step  = sampling_step / speed
 
-    T_obj = np.eye(4)
     for (q_left, q_right, t) in zip(left_wpts, right_wpts, timestamps):
-      T_obj[0:3, 0:3] = lie_traj.EvalRotation(t)
-      T_obj[0:3, 3] = translation_traj.Eval(t)
-      self.obj.SetTransform(T_obj)
+      self.obj.SetTransform(se3_traj.Eval(t))
       self.robots[0].SetActiveDOFValues(q_left)
       self.robots[1].SetActiveDOFValues(q_right)
       sleep(refresh_step)
@@ -1709,7 +1705,7 @@ class CCPlanner(object):
     @type  maxiter: int
     @param maxiter: Number of iterations to take.
     """
-    if query.cctraj.lie_traj.reversed:
+    if query.cctraj.se3_traj.lie_traj.reversed:
       self.logger.logerr('Query contains reversed trajectory. Not eligible for shortcutting.')
       return False
       
@@ -1724,8 +1720,8 @@ class CCPlanner(object):
     not_shorter_count    = 0
     successful_count     = 0
 
-    lie_traj         = query.cctraj.lie_traj
-    translation_traj = query.cctraj.translation_traj
+    lie_traj         = query.cctraj.se3_traj.lie_traj
+    translation_traj = query.cctraj.se3_traj.translation_traj
     timestamps       = query.cctraj.timestamps[:]
     left_wpts        = query.cctraj.bimanual_wpts[0][:]
     right_wpts       = query.cctraj.bimanual_wpts[1][:]
@@ -1818,7 +1814,7 @@ class CCPlanner(object):
     self.logger.loginfo('Shortcutting done. Total running time: {0}s.'. format(t_end - t_begin))
     self.logger.logdebug('Successful: {0} times. In collision: {1} times. Not shorter: {2} times. Not reachable: {3} times. Not continuous: {4} times.'.format(successful_count, in_collision_count, not_shorter_count, not_reachable_count, not_continuous_count))
 
-    query.cctraj = CCTrajectory(lie_traj, translation_traj, [left_wpts, right_wpts], timestamps, query.discr_timestep)
+    query.cctraj = CCTrajectory.init_with_lie_trans_trajs(lie_traj, translation_traj, [left_wpts, right_wpts], timestamps, query.discr_timestep)
     
   def _enable_robots_collision(self, enable=True):
     """

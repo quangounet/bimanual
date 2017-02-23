@@ -287,17 +287,97 @@
   </joint>
 
   <!-- Adjacent Links -->
-  <adjacent>robotiq_base robotiq_coupler</adjacent>
+  <!-- Basically every pair of links except the pair of two finger tips -->
+  <adjacent>robotiq_coupler robotiq_coupler</adjacent>
+  <adjacent>robotiq_coupler robotiq_base</adjacent>
+  <adjacent>robotiq_coupler robotiq_link_l1</adjacent>
+  <adjacent>robotiq_coupler robotiq_link_r1</adjacent>
+  <adjacent>robotiq_coupler robotiq_link_l4</adjacent>
+  <adjacent>robotiq_coupler robotiq_link_r4</adjacent>
+  <adjacent>robotiq_coupler robotiq_fingertip_l</adjacent>
+  <adjacent>robotiq_coupler robotiq_fingertip_r</adjacent>
+  <adjacent>robotiq_coupler robotiq_link_l2</adjacent>
+  <adjacent>robotiq_coupler robotiq_link_r2</adjacent>
+  <adjacent>robotiq_coupler robotiq_link_l3</adjacent>
+  <adjacent>robotiq_coupler robotiq_link_r3</adjacent>
+  <adjacent>robotiq_coupler robotiq_tool_tip</adjacent>
+  <adjacent>robotiq_base robotiq_base</adjacent>
   <adjacent>robotiq_base robotiq_link_l1</adjacent>
-  <adjacent>robotiq_base robotiq_link_l2</adjacent>
-  <adjacent>robotiq_link_l1 robotiq_link_l4</adjacent>
-  <adjacent>robotiq_link_l2 robotiq_link_l3</adjacent>
-  <adjacent>robotiq_link_l3 robotiq_link_l4</adjacent>
-
   <adjacent>robotiq_base robotiq_link_r1</adjacent>
+  <adjacent>robotiq_base robotiq_link_l4</adjacent>
+  <adjacent>robotiq_base robotiq_link_r4</adjacent>
+  <adjacent>robotiq_base robotiq_fingertip_l</adjacent>
+  <adjacent>robotiq_base robotiq_fingertip_r</adjacent>
+  <adjacent>robotiq_base robotiq_link_l2</adjacent>
   <adjacent>robotiq_base robotiq_link_r2</adjacent>
+  <adjacent>robotiq_base robotiq_link_l3</adjacent>
+  <adjacent>robotiq_base robotiq_link_r3</adjacent>
+  <adjacent>robotiq_base robotiq_tool_tip</adjacent>
+  <adjacent>robotiq_link_l1 robotiq_link_l1</adjacent>
+  <adjacent>robotiq_link_l1 robotiq_link_r1</adjacent>
+  <adjacent>robotiq_link_l1 robotiq_link_l4</adjacent>
+  <adjacent>robotiq_link_l1 robotiq_link_r4</adjacent>
+  <adjacent>robotiq_link_l1 robotiq_fingertip_l</adjacent>
+  <adjacent>robotiq_link_l1 robotiq_fingertip_r</adjacent>
+  <adjacent>robotiq_link_l1 robotiq_link_l2</adjacent>
+  <adjacent>robotiq_link_l1 robotiq_link_r2</adjacent>
+  <adjacent>robotiq_link_l1 robotiq_link_l3</adjacent>
+  <adjacent>robotiq_link_l1 robotiq_link_r3</adjacent>
+  <adjacent>robotiq_link_l1 robotiq_tool_tip</adjacent>
+  <adjacent>robotiq_link_r1 robotiq_link_r1</adjacent>
+  <adjacent>robotiq_link_r1 robotiq_link_l4</adjacent>
   <adjacent>robotiq_link_r1 robotiq_link_r4</adjacent>
+  <adjacent>robotiq_link_r1 robotiq_fingertip_l</adjacent>
+  <adjacent>robotiq_link_r1 robotiq_fingertip_r</adjacent>
+  <adjacent>robotiq_link_r1 robotiq_link_l2</adjacent>
+  <adjacent>robotiq_link_r1 robotiq_link_r2</adjacent>
+  <adjacent>robotiq_link_r1 robotiq_link_l3</adjacent>
+  <adjacent>robotiq_link_r1 robotiq_link_r3</adjacent>
+  <adjacent>robotiq_link_r1 robotiq_tool_tip</adjacent>
+  <adjacent>robotiq_link_l4 robotiq_link_l4</adjacent>
+  <adjacent>robotiq_link_l4 robotiq_link_r4</adjacent>
+  <adjacent>robotiq_link_l4 robotiq_fingertip_l</adjacent>
+  <adjacent>robotiq_link_l4 robotiq_fingertip_r</adjacent>
+  <adjacent>robotiq_link_l4 robotiq_link_l2</adjacent>
+  <adjacent>robotiq_link_l4 robotiq_link_r2</adjacent>
+  <adjacent>robotiq_link_l4 robotiq_link_l3</adjacent>
+  <adjacent>robotiq_link_l4 robotiq_link_r3</adjacent>
+  <adjacent>robotiq_link_l4 robotiq_tool_tip</adjacent>
+  <adjacent>robotiq_link_r4 robotiq_link_r4</adjacent>
+  <adjacent>robotiq_link_r4 robotiq_fingertip_l</adjacent>
+  <adjacent>robotiq_link_r4 robotiq_fingertip_r</adjacent>
+  <adjacent>robotiq_link_r4 robotiq_link_l2</adjacent>
+  <adjacent>robotiq_link_r4 robotiq_link_r2</adjacent>
+  <adjacent>robotiq_link_r4 robotiq_link_l3</adjacent>
+  <adjacent>robotiq_link_r4 robotiq_link_r3</adjacent>
+  <adjacent>robotiq_link_r4 robotiq_tool_tip</adjacent>
+  <adjacent>robotiq_fingertip_l robotiq_fingertip_l</adjacent>
+  <adjacent>robotiq_fingertip_l robotiq_fingertip_r</adjacent>
+  <adjacent>robotiq_fingertip_l robotiq_link_l2</adjacent>
+  <adjacent>robotiq_fingertip_l robotiq_link_r2</adjacent>
+  <adjacent>robotiq_fingertip_l robotiq_link_l3</adjacent>
+  <adjacent>robotiq_fingertip_l robotiq_link_r3</adjacent>
+  <adjacent>robotiq_fingertip_l robotiq_tool_tip</adjacent>
+  <!-- <adjacent>robotiq_fingertip_r robotiq_fingertip_r</adjacent> -->
+  <adjacent>robotiq_fingertip_r robotiq_link_l2</adjacent>
+  <adjacent>robotiq_fingertip_r robotiq_link_r2</adjacent>
+  <adjacent>robotiq_fingertip_r robotiq_link_l3</adjacent>
+  <adjacent>robotiq_fingertip_r robotiq_link_r3</adjacent>
+  <adjacent>robotiq_fingertip_r robotiq_tool_tip</adjacent>
+  <adjacent>robotiq_link_l2 robotiq_link_l2</adjacent>
+  <adjacent>robotiq_link_l2 robotiq_link_r2</adjacent>
+  <adjacent>robotiq_link_l2 robotiq_link_l3</adjacent>
+  <adjacent>robotiq_link_l2 robotiq_link_r3</adjacent>
+  <adjacent>robotiq_link_l2 robotiq_tool_tip</adjacent>
+  <adjacent>robotiq_link_r2 robotiq_link_r2</adjacent>
+  <adjacent>robotiq_link_r2 robotiq_link_l3</adjacent>
   <adjacent>robotiq_link_r2 robotiq_link_r3</adjacent>
-  <adjacent>robotiq_link_r3 robotiq_link_r4</adjacent>
-
+  <adjacent>robotiq_link_r2 robotiq_tool_tip</adjacent>
+  <adjacent>robotiq_link_l3 robotiq_link_l3</adjacent>
+  <adjacent>robotiq_link_l3 robotiq_link_r3</adjacent>
+  <adjacent>robotiq_link_l3 robotiq_tool_tip</adjacent>
+  <adjacent>robotiq_link_r3 robotiq_link_r3</adjacent>
+  <adjacent>robotiq_link_r3 robotiq_tool_tip</adjacent>
+  <adjacent>robotiq_tool_tip robotiq_tool_tip</adjacent>
+  
 </Kinbody>

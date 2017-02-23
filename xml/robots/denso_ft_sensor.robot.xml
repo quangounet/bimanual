@@ -52,5 +52,9 @@
     <effector>ati_ft_sensor</effector>
     <translation>0 0 0</translation>
   </Manipulator>
+
+  <adjacent>link6 gamma_lowerplate</adjacent>
+  <adjacent>link6 ati_ft_sensor</adjacent>
+  <adjacent>gamma_lowerplate ati_ft_sensor</adjacent>
   
 </Robot>

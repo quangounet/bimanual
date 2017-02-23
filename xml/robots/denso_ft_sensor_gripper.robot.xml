@@ -49,5 +49,15 @@
     <closingdirection>1 1 1 0</closingdirection>
     <direction>0 0 1</direction>
   </Manipulator>
+
+  <adjacent>gamma_upperplate link6</adjacent>
+  <adjacent>gamma_upperplate gamma_lowerplate</adjacent>
+  <adjacent>gamma_upperplate ati_ft_sensor</adjacent>
+  <adjacent>gamma_upperplate robotiq_85_gripper</adjacent>
+
+  <adjacent>robotiq_85_gripper link6</adjacent>
+  <adjacent>robotiq_85_gripper gamma_lowerplate</adjacent>
+  <adjacent>robotiq_85_gripper ati_ft_sensor</adjacent>
+  <adjacent>robotiq_85_gripper gamma_upperplate</adjacent>
   
 </Robot>

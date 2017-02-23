@@ -95,11 +95,16 @@ class LieTraj():
         return
         
     def Cut(self, t):
+        """Cut the Lie trajectory into two halves at t. The left half is kept in self.
+        The right half is returned.
+        """
         assert(0 <= t <= self.duration)
         if abs(t) <= epsilon:
-            return None, LieTraj(self.Rlist, self.trajlist)
+            rightLieTraj = LieTraj(self.Rlist, self.trajlist)
+            self.Initialize([], []) # self becomes invalid
+            return rightLieTraj
         elif abs(self.duration - t) <= epsilon:
-            return LieTraj(self.Rlist, self.trajlist), None
+            return LieTraj([], [])
 
         i, rem = self.FindTrajIndex(t)
         R = self.EvalRotation(t)

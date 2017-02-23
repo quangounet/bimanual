@@ -49,7 +49,8 @@ def plan_transit_motion(robot, q_start, q_goal, pregrasp_start=True, pregrasp_go
         traj_pregrasp_start = basemanip.MoveHandStraight(direction, minsteps=minsteps, maxsteps=maxsteps, steplength=steplength, starteematrix=eematrix, execute=execute, outputtrajobj=True)
       except:
         _log.info("Caught an exception in MoveHandStraight (pregrasp_start).")
-        return None
+        traj_pregrasp_start = None
+        # return None
       if traj_pregrasp_start is None:
         _log.info("MoveHandStraight failed (pregrasp_start).")
         new_q_start = q_start
@@ -74,7 +75,8 @@ def plan_transit_motion(robot, q_start, q_goal, pregrasp_start=True, pregrasp_go
         traj_pregrasp_goal = basemanip.MoveHandStraight(direction, minsteps=minsteps, maxsteps=maxsteps, steplength=steplength, starteematrix=eematrix, execute=execute, outputtrajobj=True)
       except:
         _log.info("Caught an exception in MoveHandStraight (pregrasp_goal).")
-        return None
+        traj_pregrasp_goal = None
+        # return None
       if traj_pregrasp_goal is None:
         _log.info("MoveHandStraight failed (pregrasp_goal).")
         new_q_goal = q_goal

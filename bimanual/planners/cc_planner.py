@@ -9,8 +9,9 @@ from time import time, sleep
 from copy import deepcopy
 import TOPP
 import cPickle as pickle
-from bimanual.utils.loggers import TextColors
-from bimanual.utils import utils, heap, lie
+from ..utils.loggers import TextColors
+from ..utils import utils, heap, lie
+from ..utils.trajectory import CCTrajectory
 
 # Global parameters
 FW       = 0
@@ -76,64 +77,6 @@ class SE3Config(object):
     quat = orpy.quatFromRotationMatrix(T[0:3, 0:3])
     p = T[0:3, 3]
     return SE3Config(quat, p)        
-
-
-class CCTrajectory(object):
-  """
-  Class of closed-chain trajectory, storing all information needed for 
-  a trajectory in closed-chain motions.
-  """
-
-  def __init__(self, lie_traj, translation_traj, bimanual_wpts, timestamps,
-               timestep):
-    """
-    CCTrajectory constructor.
-
-    @type  lie_traj: lie.LieTraj
-    @param lie_traj: Trajectory of the manipulated object in SO(3) space.
-    @type translation_traj: TOPP.Trajectory.PiecewisePolynomialTrajectory
-    @param translation_traj: Translational trajectory of the manipulated object.
-    @type  bimanual_wpts: list
-    @param bimanual_wpts: Trajectory of bimanual robots in form of waypoints list.
-    @type  timestamps: list
-    @param timestamps: Timestamps for time parameterization of C{bimanual_wpts}.
-    @type  timestep: float
-    @param timestep: Time resolution of bimanual_wpts.
-    """
-    self.lie_traj         = lie_traj
-    self.translation_traj = translation_traj
-    self.bimanual_wpts    = bimanual_wpts
-    self.timestamps       = timestamps[:]
-    self.timestep         = timestep
-
-  @staticmethod
-  def reverse(traj):
-    """
-    Reverse the given CCTrajectory.
-    """
-    lie_traj = deepcopy(traj.lie_traj)
-    lie_traj.reverse()
-    translation_traj = utils.reverse_traj(traj.translation_traj)
-    bimanual_wpts = [traj.bimanual_wpts[0][::-1], traj.bimanual_wpts[1][::-1]]
-    timestamps = traj.timestamps[-1] - np.array(traj.timestamps)
-    timestamps = timestamps.tolist()[::-1]
-    timestep = traj.timestep
-    return CCTrajectory(lie_traj, translation_traj, bimanual_wpts, 
-                        timestamps, timestep)
-
-  @staticmethod
-  def serialize(traj):
-    """
-    Serialize CCTrajectory object into a string using cPickle.
-    """
-    return pickle.dumps(traj)
-
-  @staticmethod
-  def deserialize(traj_str):
-    """
-    Generate a CCTrajectory object from a serialized string.
-    """
-    return pickle.loads(traj_str)
 
 
 class CCConfig(object):

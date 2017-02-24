@@ -1,6 +1,6 @@
 # Interpolation in SO(3) following Park and Ravani
 import time
-
+from copy import deepcopy
 import TOPP
 from TOPP import Trajectory
 import bisect
@@ -32,6 +32,18 @@ class LieTraj():
     def reverse(self):
         self.reversed = not self.reversed
 
+    def Duplicate(self):
+        """Return an exact same copy of self.
+        """
+        newLieTraj = LieTraj([], [])
+        newLieTraj.Rlist = deepcopy(self.Rlist)
+        newLieTraj.trajlist = deepcopy(self.trajlist)
+        newLieTraj.duration = self.duration
+        # Do not need deepcopy for a list of floats
+        newLieTraj.trajcumulateddurationslist = self.trajcumulateddurationslist[:]
+        newLieTraj.reversed = self.reversed
+        return newLieTraj        
+
     def Initialize(self, Rlist, trajlist, rev):
         """Similar to __init__
         """
@@ -49,14 +61,14 @@ class LieTraj():
         """
         assert(0 <= t <= self.duration)
         if abs(t) <= epsilon:
-            self.Initialize([], []) # self becomes invalid
+            self.Initialize([], [], self.reversed) # self becomes invalid
             return
         elif abs(self.duration - t) <= epsilon:            
             return
 
         i, rem = self.FindTrajIndex(t)
         # Rotation
-        R = self.EvalRotation(t)
+        # R = self.EvalRotation(t)
         leftRlist = self.Rlist[0:i + 1]
         leftRlist.append(R)
 
@@ -66,7 +78,7 @@ class LieTraj():
         lefttrajlist = self.trajlist[0:i]
         lefttrajlist.append(lefttrajrem)
 
-        self.Initialize(leftRlist, lefttrajlist)
+        self.Initialize(leftRlist, lefttrajlist, self.reversed)
         return
 
     def TrimFront(self, t):
@@ -76,14 +88,15 @@ class LieTraj():
         if abs(t) <= epsilon:
             return
         elif abs(self.duration - t) <= epsilon:
-            self.Initialize([], []) # self becomes invalid
+            self.Initialize([], [], self.reversed) # self becomes invalid
             return
 
         i, rem = self.FindTrajIndex(t)
         # Rotation
-        R = self.EvalRotation(t)
-        rightRlist = self.Rlist[i + 1:]
-        righRlist.insert(0, R)
+        # R = self.EvalRotation(t)
+        # rightRlist = self.Rlist[i + 1:]
+        # righRlist.insert(0, R)
+        rightRlist = self.Rlist[i:]
 
         # Translation
         traj = self.trajlist[i]
@@ -91,7 +104,7 @@ class LieTraj():
         righttrajlist = self.trajlist[i + 1:]
         rightrajlist.insert(0, righttrajrem)
 
-        self.Initialize(rightRlist, righttrajlist)
+        self.Initialize(rightRlist, righttrajlist, self.reversed)
         return
         
     def Cut(self, t):
@@ -101,10 +114,10 @@ class LieTraj():
         assert(0 <= t <= self.duration)
         if abs(t) <= epsilon:
             rightLieTraj = LieTraj(self.Rlist, self.trajlist)
-            self.Initialize([], []) # self becomes invalid
+            self.Initialize([], [], self.reversed) # self becomes invalid
             return rightLieTraj
         elif abs(self.duration - t) <= epsilon:
-            return LieTraj([], [])
+            return LieTraj([], [], self.reversed)
 
         i, rem = self.FindTrajIndex(t)
         R = self.EvalRotation(t)
@@ -113,16 +126,17 @@ class LieTraj():
         righttrajrem = Trajectory.SubTraj(traj, rem)
         
         leftRlist = self.Rlist[0:i + 1]
-        leftRlist.append(R)
+        # leftRlist.append(R)
         lefttrajlist = self.trajlist[0:i]
         lefttrajlist.append(lefttrajrem)        
         
-        rightRlist = self.Rlist[i + 1:]
-        righRlist.insert(0, R)
+        # rightRlist = self.Rlist[i + 1:]
+        # rightRlist.insert(0, R)
+        rightRlist = self.Rlist[i:]
         righttrajlist = self.trajlist[i + 1:]
-        rightrajlist.insert(0, righttrajrem)        
+        righttrajlist.insert(0, righttrajrem)        
 
-        self.Initialize(leftRlist, lefttrajlist)
+        self.Initialize(leftRlist, lefttrajlist, self.reversed)
         rightLieTraj = LieTraj(rightRlist, righttrajlist)
         return rightLieTraj        
 

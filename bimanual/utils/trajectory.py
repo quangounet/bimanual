@@ -1,6 +1,7 @@
 from . import utils
 import numpy as np
 import pickle
+import copy
 from TOPP import Trajectory
 epsilon = 1e-8
 
@@ -9,7 +10,8 @@ class SE3Trajectory(object):
     """
     
     def __init__(self, lie_traj, translation_traj, duration=None):
-      assert(abs(lie_traj.duration - translation_traj.duration) <= epsilon)
+      if lie_traj is not None:
+        assert(abs(lie_traj.duration - translation_traj.duration) <= epsilon)
       self.lie_traj = lie_traj
       self.translation_traj = translation_traj
       self.duration = duration if duration is not None else self.lie_traj.duration
@@ -18,7 +20,8 @@ class SE3Trajectory(object):
     def init(self, lie_traj, translation_traj, duration=None):
       """Similar to __init__
       """
-      assert(abs(lie_traj.duration - translation_traj.duration) <= epsilon)
+      if lie_traj is not None:
+        assert(abs(lie_traj.duration - translation_traj.duration) <= epsilon)
       self.lie_traj = lie_traj
       self.translation_traj = translation_traj
       self.duration = duration if duration is not None else self.lie_traj.duration
@@ -28,6 +31,14 @@ class SE3Trajectory(object):
     def init_with_rotation_traj_list(rot_traj_list, rot_mat_list, translation_traj):
       lie_traj = lie.LieTraj(rot_mat_list, rot_traj_list)
       return SE3Trajectory(lie_traj, translation_traj)
+
+    def duplicate(self):
+      """Copy self and return an exact SE3Trajectory.
+      """
+      new_lie_traj = self.lie_traj.Duplicate()
+      new_trans_traj = copy.deepcopy(self.translation_traj)
+      new_se3_traj = SE3Trajectory(new_lie_traj, new_trans_traj, self.duration)
+      return new_se3_traj
 
     def Eval(self, t):
       """E in Eval is capitalized to comply with other trajectory methods.
@@ -56,10 +67,10 @@ class SE3Trajectory(object):
       """
       if abs(t) <= epsilon:
         right_se3_traj = SE3Trajectory(self.lie_traj, self.translation_traj)
-        self.init([], [], 0.0)
+        self.init(None, None, 0.0)
         return right_se3_traj
       elif abs(self.duration - t) <= epsilon:
-        return SE3Trajectory([], [], 0.0)
+        return SE3Trajectory(None, None, 0.0)
 
       left_trans_traj = Trajectory.SubTraj(self.translation_traj, 0, t)
       right_lie_traj = self.lie_traj.Cut(t)

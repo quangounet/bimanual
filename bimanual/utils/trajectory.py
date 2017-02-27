@@ -16,6 +16,7 @@ class SE3Trajectory(object):
       self.translation_traj = translation_traj
       self.duration = duration if duration is not None else self.lie_traj.duration
       self._M = np.eye(4)
+      self._reversed = False
 
     def init(self, lie_traj, translation_traj, duration=None):
       """Similar to __init__
@@ -43,9 +44,20 @@ class SE3Trajectory(object):
     def Eval(self, t):
       """E in Eval is capitalized to comply with other trajectory methods.
       """
+      if self._reversed:
+        t = self.duration - t
       self._M[0:3, 0:3] = self.lie_traj.EvalRotation(t)
       self._M[0:3, 3] = self.translation_traj.Eval(t)
       return self._M
+
+    def reverse(self):
+      """Indicate if the trajectory has to be executed in reverse. This is a hack to avoid
+      changing directly the polynomial trajectories behind. However, this method is not
+      (yet) consistent with cutting and trimming of trajectories. If I have time, will fix
+      it later.
+
+      """
+      self._reversed = not self._reversed
 
     def trim_back(self, t):
       assert(0 <= t <= self.duration)
@@ -112,19 +124,18 @@ class CCTrajectory(object):
     se3_traj = SE3Trajectory(lie_traj, translation_traj)
     return CCTrajectory(se3_traj, bimanual_wpts, timestamps, timestep)
 
-  @staticmethod
-  def reverse(traj):
+  # @staticmethod
+  def reverse(self):
     """
     Reverse the given CCTrajectory.
     """
-    lie_traj = deepcopy(traj.lie_traj)
-    lie_traj.reverse()
-    translation_traj = utils.reverse_traj(traj.translation_traj)
-    bimanual_wpts = [traj.bimanual_wpts[0][::-1], traj.bimanual_wpts[1][::-1]]
-    timestamps = traj.timestamps[-1] - np.array(traj.timestamps)
+    se3_traj = self.se3_traj.duplicate()
+    se3_traj.reverse()
+    bimanual_wpts = [self.bimanual_wpts[0][::-1], self.bimanual_wpts[1][::-1]]
+    timestamps = self.timestamps[-1] - np.array(self.timestamps)
     timestamps = timestamps.tolist()[::-1]
-    timestep = traj.timestep
-    return CCTrajectory(lie_traj, translation_traj, bimanual_wpts, timestamps, timestep)
+    timestep = self.timestep
+    return CCTrajectory(se3_traj, bimanual_wpts, timestamps, timestep)
 
   @staticmethod
   def serialize(traj):
@@ -150,7 +161,11 @@ class CCTrajectory(object):
     left_trans_traj = Trajectory.SubTraj(self.translation_traj, 0, t)
     right_trans_traj = Trajectory.SubTraj(self.translation_traj, t)
     left_cc_traj = CCTrajectory(left_lie_traj, left_trans_traj,
-                                self.bimanual_wpts[0:i + 1], self.timestamps[0: i + 1], self.timestep)
+                                [copy.deepcopy(self.bimanual_wtps[0][0:i + 1]),
+                                 copy.deepcopy(self.bimanual_wtps[0][0:i + 1])],
+                                self.timestamps[0: i + 1], self.timestep)
     right_cc_traj = CCTrajectory(right_lie_traj, right_trans_traj,
-                                 self.bimanual_wpts[i:], self.timestamps[i:], self.timestep)
+                                 [copy.deepcopy(self.bimanual_wtps[0][i:]),
+                                  copy.deepcopy(self.bimanual_wtps[0][i:])],
+                                 self.timestamps[i:], self.timestep)
     return left_cc_traj, right_cc_traj

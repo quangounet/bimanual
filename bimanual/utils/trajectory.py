@@ -99,6 +99,7 @@ class CCTrajectory(object):
   """
   def __init__(self, se3_traj, bimanual_wpts, timestamps, timestep=None):
     self.se3_traj      = se3_traj
+    # Note: bimanual_wpts = [left_wpts, right_wpts]
     self.bimanual_wpts = bimanual_wpts
     self.timestamps    = timestamps[:]
     self.timestep      = timestep if timestep is not None else timestamps[1] - timestamps[0]

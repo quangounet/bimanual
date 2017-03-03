@@ -27,10 +27,6 @@ class LieTraj():
         for t in trajlist:
             self.trajcumulateddurationslist.append(self.duration)
             self.duration += t.duration
-        self.reversed = False
-
-    def reverse(self):
-        self.reversed = not self.reversed
 
     def Duplicate(self):
         """Return an exact same copy of self.
@@ -41,10 +37,9 @@ class LieTraj():
         newLieTraj.duration = self.duration
         # Do not need deepcopy for a list of floats
         newLieTraj.trajcumulateddurationslist = self.trajcumulateddurationslist[:]
-        newLieTraj.reversed = self.reversed
         return newLieTraj        
 
-    def Initialize(self, Rlist, trajlist, rev):
+    def Initialize(self, Rlist, trajlist):
         """Similar to __init__
         """
         self.Rlist = Rlist[:]
@@ -54,21 +49,19 @@ class LieTraj():
         for t in trajlist:
             self.trajcumulateddurationslist.append(self.duration)
             self.duration += t.duration
-        self.reversed = rev
         
     def TrimBack(self, t):
         """Remove the segment of the trajectory from t to duration.
         """
         assert(0 <= t <= self.duration)
         if abs(t) <= epsilon:
-            self.Initialize([], [], self.reversed) # self becomes invalid
+            self.Initialize([], []) # self becomes invalid
             return
         elif abs(self.duration - t) <= epsilon:            
             return
 
         i, rem = self.FindTrajIndex(t)
         # Rotation
-        # R = self.EvalRotation(t)
         leftRlist = self.Rlist[0:i + 1]
         leftRlist.append(R)
 
@@ -78,7 +71,7 @@ class LieTraj():
         lefttrajlist = self.trajlist[0:i]
         lefttrajlist.append(lefttrajrem)
 
-        self.Initialize(leftRlist, lefttrajlist, self.reversed)
+        self.Initialize(leftRlist, lefttrajlist)
         return
 
     def TrimFront(self, t):
@@ -88,14 +81,11 @@ class LieTraj():
         if abs(t) <= epsilon:
             return
         elif abs(self.duration - t) <= epsilon:
-            self.Initialize([], [], self.reversed) # self becomes invalid
+            self.Initialize([], []) # self becomes invalid
             return
 
         i, rem = self.FindTrajIndex(t)
         # Rotation
-        # R = self.EvalRotation(t)
-        # rightRlist = self.Rlist[i + 1:]
-        # righRlist.insert(0, R)
         rightRlist = self.Rlist[i:]
 
         # Translation
@@ -104,7 +94,7 @@ class LieTraj():
         righttrajlist = self.trajlist[i + 1:]
         rightrajlist.insert(0, righttrajrem)
 
-        self.Initialize(rightRlist, righttrajlist, self.reversed)
+        self.Initialize(rightRlist, righttrajlist)
         return
         
     def Cut(self, t):
@@ -114,10 +104,10 @@ class LieTraj():
         assert(0 <= t <= self.duration)
         if abs(t) <= epsilon:
             rightLieTraj = LieTraj(self.Rlist, self.trajlist)
-            self.Initialize([], [], self.reversed) # self becomes invalid
+            self.Initialize([], []) # self becomes invalid
             return rightLieTraj
         elif abs(self.duration - t) <= epsilon:
-            return LieTraj([], [], self.reversed)
+            return LieTraj([], [])
 
         i, rem = self.FindTrajIndex(t)
         R = self.EvalRotation(t)
@@ -126,19 +116,21 @@ class LieTraj():
         righttrajrem = Trajectory.SubTraj(traj, rem)
         
         leftRlist = self.Rlist[0:i + 1]
-        # leftRlist.append(R)
         lefttrajlist = self.trajlist[0:i]
         lefttrajlist.append(lefttrajrem)        
         
-        # rightRlist = self.Rlist[i + 1:]
-        # rightRlist.insert(0, R)
         rightRlist = self.Rlist[i:]
         righttrajlist = self.trajlist[i + 1:]
         righttrajlist.insert(0, righttrajrem)        
 
-        self.Initialize(leftRlist, lefttrajlist, self.reversed)
+        self.Initialize(leftRlist, lefttrajlist)
         rightLieTraj = LieTraj(rightRlist, righttrajlist)
-        return rightLieTraj        
+        return rightLieTraj
+
+    def Reverse(self):
+        newRList = self.Rlist[::-1]
+        newTrajsList = [Trajectory.ReverseTrajectory(traj) for traj in self.trajlist[::-1]]
+        self.Initialize(newRList, newTrajsList)        
 
     def FindTrajIndex(self, s):
         if s <= 0:
@@ -151,15 +143,11 @@ class LieTraj():
 
     # Rotation
     def EvalRotation(self,s):
-        if self.reversed:
-            s = self.duration - s
         i, remainder = self.FindTrajIndex(s)
         return(dot(self.Rlist[i],expmat(self.trajlist[i].Eval(remainder))))
 
     # Velocity in body frame
     def EvalOmega(self,s):
-        if self.reversed:
-            s = self.duration - s
         i, remainder = self.FindTrajIndex(s)
         r = self.trajlist[i].Eval(remainder)
         rd = self.trajlist[i].Evald(remainder)
@@ -167,8 +155,6 @@ class LieTraj():
 
     # Acceleration in body frame
     def EvalAlpha(self,s):
-        if self.reversed:
-            s = self.duration - s
         i, remainder = self.FindTrajIndex(s)
         r = self.trajlist[i].Eval(remainder)
         rd = self.trajlist[i].Evald(remainder)
@@ -177,8 +163,6 @@ class LieTraj():
 
     # Torques
     def EvalTorques(self,s,I):
-        if self.reversed:
-            s = self.duration - s
         i, remainder = self.FindTrajIndex(s)
         r = self.trajlist[i].Eval(remainder)
         rd = self.trajlist[i].Evald(remainder)

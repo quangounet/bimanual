@@ -51,13 +51,10 @@ class SE3Trajectory(object):
       return self._M
 
     def reverse(self):
-      """Indicate if the trajectory has to be executed in reverse. This is a hack to avoid
-      changing directly the polynomial trajectories behind. However, this method is not
-      (yet) consistent with cutting and trimming of trajectories. If I have time, will fix
-      it later.
-
+      """Perform change of variable: s --> duration - s.
       """
-      self._reversed = not self._reversed
+      self.lie_traj.Reverse()
+      self.translation_traj = Trajectory.ReverseTrajectory(self.translation_traj)
 
     def trim_back(self, t):
       assert(0 <= t <= self.duration)
@@ -128,7 +125,7 @@ class CCTrajectory(object):
   # @staticmethod
   def reverse(self):
     """
-    Reverse the given CCTrajectory.
+    Reverse the given CCTrajectory. Produce and return a new trajectory.
     """
     se3_traj = self.se3_traj.duplicate()
     se3_traj.reverse()

@@ -49,6 +49,17 @@ class LieTraj():
         for t in trajlist:
             self.trajcumulateddurationslist.append(self.duration)
             self.duration += t.duration
+
+    def Append(self, lieTraj):
+        # Check soundness
+        assert(np.allclose(self.EvalRotation(self.duration), lieTraj.EvalRotation(0)))
+        self.Rlist = self.Rlist[0:len(self.trajlist)] # just in case we somehow have redundant matrices
+
+        self.Rlist += lieTraj.Rlist
+        self.trajlist += lieTraj.trajlist
+        durationsList = [t + self.duration for t in lieTraj.trajcumulateddurationslist]
+        self.trajcumulateddurationslist += durationsList
+        self.duration += lieTraj.duration
         
     def TrimBack(self, t):
         """Remove the segment of the trajectory from t to duration.
@@ -128,9 +139,10 @@ class LieTraj():
         return rightLieTraj
 
     def Reverse(self):
-        newRList = self.Rlist[::-1]
+        self.Rlist = self.Rlist[0:len(self.trajlist)]
+        newRlist = self.Rlist[::-1]
         newTrajsList = [Trajectory.ReverseTrajectory(traj) for traj in self.trajlist[::-1]]
-        self.Initialize(newRList, newTrajsList)        
+        self.Initialize(newRlist, newTrajsList)        
 
     def FindTrajIndex(self, s):
         if s <= 0:

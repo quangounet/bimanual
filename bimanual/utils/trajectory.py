@@ -15,8 +15,6 @@ class SE3Trajectory(object):
       self.lie_traj = lie_traj
       self.translation_traj = translation_traj
       self.duration = duration if duration is not None else self.lie_traj.duration
-      self._M = np.eye(4)
-      self._reversed = False
 
     def init(self, lie_traj, translation_traj, duration=None):
       """Similar to __init__
@@ -26,12 +24,18 @@ class SE3Trajectory(object):
       self.lie_traj = lie_traj
       self.translation_traj = translation_traj
       self.duration = duration if duration is not None else self.lie_traj.duration
-      self._M = np.eye(4)
         
     @staticmethod
     def init_with_rotation_traj_list(rot_traj_list, rot_mat_list, translation_traj):
       lie_traj = lie.LieTraj(rot_mat_list, rot_traj_list)
       return SE3Trajectory(lie_traj, translation_traj)
+
+    def append_traj(self, se3_traj):
+      """Append the given SE3Trajectory to self.
+      """
+      self.lie_traj.Append(se3_traj.lie_traj)
+      self.translation_traj = Trajectory.Concatenate(self.translation_traj, se3_traj.translation_traj)
+      self.duration += se3_traj.duration
 
     def duplicate(self):
       """Copy self and return an exact SE3Trajectory.
@@ -44,11 +48,10 @@ class SE3Trajectory(object):
     def Eval(self, t):
       """E in Eval is capitalized to comply with other trajectory methods.
       """
-      if self._reversed:
-        t = self.duration - t
-      self._M[0:3, 0:3] = self.lie_traj.EvalRotation(t)
-      self._M[0:3, 3] = self.translation_traj.Eval(t)
-      return self._M
+      T = np.eye(4)
+      T[0:3, 0:3] = self.lie_traj.EvalRotation(t)
+      T[0:3, 3] = self.translation_traj.Eval(t)
+      return T
 
     def reverse(self):
       """Perform change of variable: s --> duration - s.

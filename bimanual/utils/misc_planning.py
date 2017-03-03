@@ -6,7 +6,7 @@ logging.basicConfig(format='[%(levelname)s] [%(name)s: %(funcName)s] %(message)s
 _log = logging.getLogger(__name__)
 
 
-def plan_transit_motion(robot, q_start, q_goal, pregrasp_start=True, pregrasp_goal=True):
+def plan_transit_motion(robot, q_start, q_goal, pregrasp_start=True, pregrasp_goal=True, ntrials=1):
   """
   Plan a transit motion (non-grasping motion) for robot moving from q_start to q_goal.
 
@@ -94,31 +94,35 @@ def plan_transit_motion(robot, q_start, q_goal, pregrasp_start=True, pregrasp_go
     else:
       new_q_goal = q_goal
 
-    _log.info("new_q_start = {0}".format(new_q_start.__repr__()))
-    _log.info("new_q_goal = {0}".format(new_q_goal.__repr__()))
+    _log.info("new_q_start = np.{0}".format(new_q_start.__repr__()))
+    _log.info("new_q_goal = np.{0}".format(new_q_goal.__repr__()))
 
     # Plan a motion connecting new_q_start and new_q_goal
     try:
       # Using MoveActiveJoints sometimes has problems with jittering. As a fix, we plan using this birrt + parabolicsmoother
-      planner = orpy.RaveCreatePlanner(env, 'birrt')
-      params = orpy.Planner.PlannerParameters()
-      params.SetRobotActiveJoints(robot) # robot's active DOFs must be correctly set before calling this function
-      params.SetInitialConfig(new_q_start)
-      params.SetGoalConfig(new_q_goal)
-      params.SetMaxIterations(10000)
-      extraparams = '<_postprocessing planner="parabolicsmoother2"><_nmaxiterations>100</_nmaxiterations></_postprocessing>'
-      params.SetExtraParameters(extraparams)
-      planner.InitPlan(robot, params)
-      traj_connect = orpy.RaveCreateTrajectory(env, '')
-      res = planner.PlanPath(traj_connect)
-      if not (res == orpy.PlannerStatus.HasSolution):
-        _log.info("Planner failed.")
-        return None
+      for i in xrange(ntrials):
+        planner = orpy.RaveCreatePlanner(env, 'birrt')
+        params = orpy.Planner.PlannerParameters()
+        params.SetRobotActiveJoints(robot) # robot's active DOFs must be correctly set before calling this function
+        params.SetInitialConfig(new_q_start)
+        params.SetGoalConfig(new_q_goal)
+        params.SetMaxIterations(10000)
+        params.SetRandomGeneratorSeed(i)
+        extraparams = '<_postprocessing planner="parabolicsmoother2"><_nmaxiterations>100</_nmaxiterations></_postprocessing>'
+        params.SetExtraParameters(extraparams)
+        planner.InitPlan(robot, params)
+        traj_connect = orpy.RaveCreateTrajectory(env, '')
+        res = planner.PlanPath(traj_connect)
+        if not (res == orpy.PlannerStatus.HasSolution):
+          _log.info("Trial {0}: planning failed.".format(i + 1))
+          continue
+        else:
+          break
     except Exception as e:
       _log.info("Caught an exception ({0}) in MoveActiveJoints.".format(e))
       return None
     if traj_connect is None:
-      _log.info("MoveActiveJoints failed.")
+      _log.info("Planner failed after {0} trials.".format(ntrials))
       return None
 
     trajs_list = [traj for traj in [traj_pregrasp_start, traj_connect, traj_pregrasp_goal] if traj is not None]

@@ -1683,10 +1683,6 @@ class CCPlanner(object):
     @type  maxiter: int
     @param maxiter: Number of iterations to take.
     """
-    if query.cctraj.se3_traj.lie_traj.reversed:
-      self.logger.logerr('Query contains reversed trajectory. Not eligible for shortcutting.')
-      return False
-      
     # Shortcutting parameters
     min_shortcut_duration = query.interpolation_duration / 2.0
     min_n_timesteps = int(min_shortcut_duration / query.discr_timestep)

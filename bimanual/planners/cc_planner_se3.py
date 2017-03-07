@@ -663,10 +663,12 @@ class CCPlanner(object):
     # translational limit
     T_obj_start = query.v_start.config.SE3_config.T
     T_obj_goal = query.v_goal.config.SE3_config.T
-    if ((T_obj_start[:3,3] < query.lower_limits).any() or 
-        (T_obj_start[:3,3] > query.upper_limits).any() or 
-        (T_obj_goal[:3,3] < query.lower_limits).any() or 
-        (T_obj_goal[:3,3] > query.upper_limits).any()):
+    epsilon = 1e-8
+    E = np.asarray([epsilon] * 3)
+    if ((T_obj_start[:3,3] < query.lower_limits - E).any() or 
+        (T_obj_start[:3,3] > query.upper_limits + E).any() or 
+        (T_obj_goal[:3,3] < query.lower_limits - E).any() or 
+        (T_obj_goal[:3,3] > query.upper_limits + E).any()):
       self.logger.logerr('Start or goal object translation exceeds given limits.')
       return False
     # collision

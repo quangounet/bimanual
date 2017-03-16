@@ -1532,10 +1532,12 @@ class CCPlanner(object):
     @rtype: bool
     @return: B{True} if the config is collision-free.
     """
-    self._enable_robots_collision(False)
-    self.obj.SetTransform(SE3_config.T)
-    is_free = not self.env.CheckCollision(self.obj.mobj)
-    self._enable_robots_collision()
+    with self.robots[0]:
+      self.robots[0].SetActiveDOFValues(np.zeros(6))
+      with self.robots[1]:
+        self.robots[1].SetActiveDOFValues(np.zeros(6))
+        self.obj.SetTransform(SE3_config.T)
+        is_free = not self.env.CheckCollision(self.obj.mobj)
     return is_free
   
   def is_collision_free_SE3_traj(self, rot_traj, translation_traj, R_beg):
@@ -1555,7 +1557,8 @@ class CCPlanner(object):
     """
     T = np.eye(4)
     with self.env:
-      self._enable_robots_collision(False)
+      self.robots[0].SetActiveDOFValues(np.zeros(6))
+      self.robots[1].SetActiveDOFValues(np.zeros(6))
 
       for t in np.append(utils.arange(0, translation_traj.duration, 
                          self._query.discr_check_timestep), 
@@ -1566,11 +1569,8 @@ class CCPlanner(object):
         self.obj.SetTransform(T)
         in_collision = self.env.CheckCollision(self.obj.mobj)
         if in_collision:
-          self._enable_robots_collision()
           return False
       
-      self._enable_robots_collision()
-
     return True        
   
   def check_SE3_config_reachability(self, SE3_config):
@@ -1584,15 +1584,13 @@ class CCPlanner(object):
     @return: B{True} if the IK solutions for both robots exist.
     """
     with self.env:
-      self.obj.SetTransform(SE3_config.T)      
-      self._enable_robots_collision(False)
+      self.obj.SetTransform(SE3_config.T)
 
       for i in xrange(2):
         T_gripper = np.dot(SE3_config.T, self.bimanual_T_rel[i])
-        self.robots[i].Enable(True)
+        self.robots[(i + 1)%2].SetActiveDOFValues(np.zeros(6))
         sol = self.manips[i].FindIKSolution(T_gripper, IK_CHECK_COLLISION)
         if sol is None:
-          self._enable_robots_collision()
           return False
 
     return True
@@ -1814,16 +1812,6 @@ class CCPlanner(object):
 
     query.cctraj = CCTrajectory.init_with_lie_trans_trajs(lie_traj, translation_traj, [left_wpts, right_wpts], timestamps, query.discr_timestep)
     
-  def _enable_robots_collision(self, enable=True):
-    """
-    Enable or disable collision checking for the robots.
-
-    @type  enable: boll
-    @param enable: B{True} to enable collision checking for the robots. B{False} to disable.
-    """
-    for robot in self.robots:
-      robot.Enable(enable)
-
 class BimanualObjectTracker(object):
   """
   Class containing method for tracking an object with two robots
